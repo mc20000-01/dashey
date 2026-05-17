@@ -173,8 +173,8 @@
           { opcode: 'changeVirtualStageCamera', blockType: Scratch.BlockType.COMMAND, text: 'change virtual stage [STAGE_ID] camera x [DX] y [DY] zoom [DZOOM] direction [DDIRECTION]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, DX: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DY: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DZOOM: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DDIRECTION: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 } } },
           { opcode: 'setVirtualStageSize', blockType: Scratch.BlockType.COMMAND, text: 'set virtual stage [STAGE_ID] size w [WIDTH] h [HEIGHT]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, WIDTH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 480 }, HEIGHT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 360 } } },
           { opcode: 'getVirtualStageInfo', blockType: Scratch.BlockType.REPORTER, text: 'virtual stage [STAGE_ID] [PROP]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_INFO_MENU' } } },
-          { opcode: 'localiseToStage', blockType: Scratch.BlockType.REPORTER, text: 'localise [VALUE] as [PROP] to stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
-          { opcode: 'normaliseFromStage', blockType: Scratch.BlockType.REPORTER, text: 'normalise [VALUE] as [PROP] from stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
+          { opcode: 'localiseToStage', blockType: Scratch.BlockType.REPORTER, text: 'localise scalar [VALUE] as [PROP] to stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
+          { opcode: 'normaliseFromStage', blockType: Scratch.BlockType.REPORTER, text: 'normalise scalar [VALUE] as [PROP] from stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
           { opcode: 'setWidgetStyle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] style key [KEY] value [VALUE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, KEY: { type: Scratch.ArgumentType.STRING, defaultValue: 'accent' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '#00d2ff' } } },
           { opcode: 'setWidgetShape', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] shape [SHAPE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'SHAPE_MENU' } } },
           { opcode: 'setWidgetTitle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] title to [TITLE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Widget' } } },
@@ -1096,27 +1096,53 @@
       return w;
     }
 
-    _localStageVector(stageId, value, prop, invert = false) {
+    _virtualStageTransform(stageId) {
+      const cam = this._getVirtualStageCamera(stageId);
+      const zoom = cam.zoom / 100 || 1;
+      const angle = (90 - cam.direction) * Math.PI / 180;
+      return { cam, zoom, cos: Math.cos(angle), sin: Math.sin(angle) };
+    }
+
+    _worldToVirtualStagePoint(stageId, x, y) {
+      const { cam, zoom, cos, sin } = this._virtualStageTransform(stageId);
+      const dx = num(x, 0) - cam.x;
+      const dy = num(y, 0) - cam.y;
+      return { x: zoom * (dx * cos - dy * sin), y: zoom * (dx * sin + dy * cos) };
+    }
+
+    _virtualStageToWorldPoint(stageId, x, y) {
+      const { cam, zoom, cos, sin } = this._virtualStageTransform(stageId);
+      const lx = num(x, 0) / zoom;
+      const ly = num(y, 0) / zoom;
+      return { x: cam.x + lx * cos + ly * sin, y: cam.y - lx * sin + ly * cos };
+    }
+
+    _isVirtualStageRotated(stageId) {
+      const cam = this._getVirtualStageCamera(stageId);
+      const offset = ((cam.direction - 90) % 360 + 360) % 360;
+      return Math.abs(offset) > 1e-9 && Math.abs(offset - 360) > 1e-9;
+    }
+
+    _warnAmbiguousStageAxis(stageId, prop, invert) {
+      const key = `${stageId}:${prop}:${invert ? 'normalise' : 'localise'}`;
+      this._ambiguousStageAxisWarnings = this._ambiguousStageAxisWarnings || new Set();
+      if (this._ambiguousStageAxisWarnings.has(key)) return;
+      this._ambiguousStageAxisWarnings.add(key);
+      console.warn(`[Dashey] ${invert ? 'normaliseFromStage' : 'localiseToStage'} cannot rotate a single ${prop} coordinate for virtual stage "${stageId}" without its paired coordinate; returning the scalar unchanged.`);
+    }
+
+    _localStageScalar(stageId, value, prop, invert = false) {
       const cam = this._getVirtualStageCamera(stageId);
       const zoom = cam.zoom / 100 || 1;
       const v = num(value, 0);
       const p = String(prop).toLowerCase();
       if (p === 'size') return invert ? v / zoom : v * zoom;
       if (p === 'direction' || p === 'rotation') return invert ? v + (cam.direction - 90) : v - (cam.direction - 90);
-      const angle = (90 - cam.direction) * Math.PI / 180;
-      const cos = Math.cos(angle), sin = Math.sin(angle);
-      const worldToLocal = (x, y) => {
-        const dx = x - cam.x;
-        const dy = y - cam.y;
-        return { x: zoom * (dx * cos - dy * sin), y: zoom * (dx * sin + dy * cos) };
-      };
-      const localToWorld = (x, y) => {
-        const lx = x / zoom;
-        const ly = y / zoom;
-        return { x: cam.x + lx * cos + ly * sin, y: cam.y - lx * sin + ly * cos };
-      };
-      if (!invert) return p === 'y' ? worldToLocal(0, v).y : worldToLocal(v, 0).x;
-      return p === 'y' ? localToWorld(0, v).y : localToWorld(v, 0).x;
+      if (p === 'x' || p === 'y') {
+        if (this._isVirtualStageRotated(stageId)) this._warnAmbiguousStageAxis(stageId, p, invert);
+        return v;
+      }
+      return v;
     }
 
     _drawChart(widget) {
@@ -1375,9 +1401,14 @@
     setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) this._savePersisted(); }
     changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) this._savePersisted(); }
     setVirtualStageSize(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.width = num(args.WIDTH, 480); cam.height = num(args.HEIGHT, 360); }); if (w) this._savePersisted(); }
-    getVirtualStageInfo(args) { const cam = this._getVirtualStageCamera(args.STAGE_ID); const prop = String(args.PROP).toLowerCase(); if (prop === 'rotation') return cam.direction; if (prop === 'mouse x') return this._localStageVector(args.STAGE_ID, this._readMouse('x'), 'x', false); if (prop === 'mouse y') return this._localStageVector(args.STAGE_ID, this._readMouse('y'), 'y', false); return cam[prop] ?? ''; }
-    localiseToStage(args) { return this._localStageVector(args.STAGE_ID, args.VALUE, args.PROP, false); }
-    normaliseFromStage(args) { return this._localStageVector(args.STAGE_ID, args.VALUE, args.PROP, true); }
+    getVirtualStageInfo(args) { const cam = this._getVirtualStageCamera(args.STAGE_ID); const prop = String(args.PROP).toLowerCase(); if (prop === 'rotation') return cam.direction; if (prop === 'mouse x' || prop === 'mouse y') { const mouse = this._worldToVirtualStagePoint(args.STAGE_ID, this._readMouse('x'), this._readMouse('y')); return prop === 'mouse y' ? mouse.y : mouse.x; } return cam[prop] ?? ''; }
+
+    // These reporter blocks accept one scalar value. Scalar camera conversions are
+    // safe for size, direction, and rotation. The x and y options represent point
+    // components, so this scalar-only API leaves them unchanged; with rotation
+    // active it also warns instead of inventing a missing paired coordinate.
+    localiseToStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, false); }
+    normaliseFromStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, true); }
     setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._savePersisted(); }
     setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
     setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); w.label.textContent = w.title; this._savePersisted(); }
