@@ -175,6 +175,7 @@
         this._styleText = existing.textContent || '';
         return;
       }
+      if (document.getElementById('dashey-style')) return;
       const style = document.createElement('style');
       style.id = 'dashey-style';
       style.textContent = `
@@ -262,6 +263,34 @@
       };
     }
 
+
+    _applyTheme(dash) {
+      if (!dash?.container) return;
+      const vars = dash.theme?.vars || DEFAULT_THEME.vars;
+      for (const k in vars) dash.container.style.setProperty(k, vars[k]);
+      dash.container.style.background = 'var(--dp-bg)';
+      dash.container.style.color = 'var(--dp-fg)';
+      dash.container.style.fontFamily = 'var(--dp-font)';
+    }
+
+    _getDash(id, autoTitle = null) {
+      const k = String(id);
+      if (!this.dashboards[k] && autoTitle !== null) this.createDashboard({ DASH_ID: k, TITLE: autoTitle });
+      return this.dashboards[k];
+    }
+
+    _serializeWidget(w) {
+      return { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position };
+    }
+
+    _serializeDashboard(dash) {
+      return {
+        id: dash.id, title: dash.title, window: clone(dash.window), layout: clone(dash.layout), theme: clone(dash.theme), variables: clone(dash.variables),
+        bindings: clone(dash.bindings), links: clone(dash.links), pages: clone(dash.pages), activePage: dash.activePage, security: clone(dash.security),
+        widgets: Object.values(dash.widgets).map(w => this._serializeWidget(w))
+      };
+    }
+
     _deserializeDashboard(obj) {
       const dash = this._makeDashboard(obj.id, obj.title || obj.id);
       dash.window = Object.assign(dash.window, obj.window || {});
@@ -277,6 +306,14 @@
         dash.widgets[w.id] = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, dom: {}, card: null, content: null, resizeHandle: null };
       }
       return dash;
+    }
+
+    _savePersisted() {
+      const bundle = { schemaVersion: '2.0.0', updatedAt: Date.now(), dashboards: {}, themes: clone(this.themes) };
+      for (const id in this.dashboards) bundle.dashboards[id] = this._serializeDashboard(this.dashboards[id]);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(bundle)); } catch (e) { console.warn('[Dashey] save failed', e); }
+    }
+
     }
 
     _savePersisted() {
@@ -404,6 +441,82 @@
       dash.container.appendChild(header);
     }
 
+    _syncWindowStyles(dash) {
+      if (!dash?.container) return;
+      const mode = dash.window.mode || 'windowed';
+      dash.host.style.zIndex = String(dash.window.zIndex || this.globalZ);
+      dash.container.style.borderRadius = mode === 'windowed' || mode === 'modal' ? '12px' : '0px';
+      if (mode === 'fullscreen') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '100vh' });
+      } else if (mode === 'snapped-left') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '50vw', height: '100vh' });
+      } else if (mode === 'snapped-right') {
+        Object.assign(dash.container.style, { left: '50vw', top: '0px', width: '50vw', height: '100vh' });
+      } else if (mode === 'snapped-top') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '50vh' });
+      } else if (mode === 'snapped-bottom') {
+        Object.assign(dash.container.style, { left: '0px', top: '50vh', width: '100vw', height: '50vh' });
+      } else {
+        const width = clamp(num(dash.window.width, 700), 260, Math.max(260, window.innerWidth));
+        const height = clamp(num(dash.window.height, 480), 180, Math.max(180, window.innerHeight));
+        dash.window.width = width;
+        dash.window.height = height;
+        dash.window.x = clamp(num(dash.window.x, 80), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(num(dash.window.y, 80), 0, Math.max(0, window.innerHeight - 40));
+        Object.assign(dash.container.style, {
+          left: `${dash.window.x}px`, top: `${dash.window.y}px`, width: `${width}px`, height: `${height}px`
+        });
+      }
+    }
+
+    _hydrateDashboardDom(dash) {
+      this._createHostAndWindow(dash);
+      for (const wid in dash.widgets) {
+        const w = dash.widgets[wid];
+        if (!w.card) this._createWidgetDom(dash, w, w.title, w.value);
+      }
+      this._renderDashboardFromModel(dash);
+      this._syncWindowStyles(dash);
+    }
+
+    _record(change) {
+      if (!change) return;
+      this.undoStack.push(change);
+      if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
+      this.redoStack.length = 0;
+    }
+
+    _createHostAndWindow(dash) {
+      if (dash.host) return;
+      dash.host = document.createElement('div');
+      dash.host.className = 'dp-host';
+      dash.host.id = `dp-host-${dash.id}`;
+      dash.host.style.zIndex = dash.window.zIndex;
+      document.body.appendChild(dash.host);
+      dash.shadow = dash.host.attachShadow({ mode: 'open' });
+      const shim = document.createElement('style'); shim.textContent = ':host{all:initial}'; dash.shadow.appendChild(shim);
+      const root = document.createElement('div');
+      root.className = 'dp-window';
+      dash.container = root; dash.shadow.appendChild(root);
+      this._applyTheme(dash);
+      this._buildChrome(dash);
+      this._buildBody(dash);
+      this._installDragging(dash);
+      this._installResizing(dash);
+      this._syncWindowStyles(dash);
+    }
+
+    _buildChrome(dash) {
+      const header = document.createElement('div'); header.className = 'dp-header';
+      const controls = document.createElement('div'); controls.className = 'dp-no-drag'; controls.style.display = 'flex'; controls.style.gap = '8px';
+      const dot = (c, h, fn) => { const d = document.createElement('div'); d.className = 'dp-no-drag'; d.style.cssText = `width:12px;height:12px;border-radius:50%;background:${c};cursor:pointer;transition:transform .2s,background .2s`; d.onmouseenter = () => { d.style.background = h; d.style.transform = 'scale(1.15)'; }; d.onmouseleave = () => { d.style.background = c; d.style.transform = 'scale(1)'; }; d.onclick = fn; return d; };
+      controls.append(dot('#ff5f56', '#ff7a73', () => this.hideDashboard({ DASH_ID: dash.id })), dot('#ffbd2e', '#ffcf5c', () => this.setWindowMode({ DASH_ID: dash.id, MODE: 'windowed' })), dot('#27c93f', '#4ddb63', () => this.setWindowMode({ DASH_ID: dash.id, MODE: 'fullscreen' })));
+      const title = document.createElement('span'); title.className = 'dp-title'; title.textContent = dash.title;
+      header.appendChild(controls); header.appendChild(title); header.appendChild(document.createElement('div'));
+      dash.header = header;
+      dash.container.appendChild(header);
+    }
+
     _buildBody(dash) {
       const body = document.createElement('div'); body.className = 'dp-body';
       const grid = document.createElement('div'); grid.className = 'dp-grid';
@@ -439,6 +552,8 @@
         const bounds = this._getLooseWindowBounds(width, height);
         dash.window.x = clamp(state.x + (e.clientX - state.sx), bounds.minX, bounds.maxX);
         dash.window.y = clamp(state.y + (e.clientY - state.sy), bounds.minY, bounds.maxY);
+        dash.window.x = clamp(state.x + (e.clientX - state.sx), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(state.y + (e.clientY - state.sy), 0, Math.max(0, window.innerHeight - 40));
         dash.container.style.left = `${dash.window.x}px`;
         dash.container.style.top = `${dash.window.y}px`;
         this._emit('dashboard.moved', dash, { x: dash.window.x, y: dash.window.y });
@@ -490,6 +605,145 @@
         const bounds = this._getLooseWindowBounds(state.w, state.h);
         const w = clamp(state.w + (e.clientX - state.sx), 260, bounds.maxWidth);
         const ht = clamp(state.h + (e.clientY - state.sy), 180, bounds.maxHeight);
+        dash.window.width = w;
+        dash.window.height = ht;
+        dash.container.style.width = `${w}px`;
+        dash.container.style.height = `${ht}px`;
+      };
+      const up = e => {
+        if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        state.resizing = false;
+        state.pointerId = null;
+        this._savePersisted();
+        try { h.releasePointerCapture(e.pointerId); } catch {}
+      };
+      h.addEventListener('pointerdown', down);
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      dash.cleanupResize = () => {
+        h.removeEventListener('pointerdown', down);
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+    }
+
+    _buildCard(widget, title) {
+      const card = document.createElement('div'); card.className = 'dp-card'; card.dataset.widgetId = widget.id;
+      const label = document.createElement('div'); label.className = 'dp-label'; label.textContent = title || '';
+      const content = document.createElement('div'); content.style.width = '100%'; content.style.height = 'calc(100% - 20px)';
+      const resize = document.createElement('div'); resize.className = 'dp-resize';
+      card.append(label, content, resize);
+      return { card, label, content, resize };
+    }
+
+    _wireWidget(dash, widget) {
+      widget.card.addEventListener('mouseenter', () => this._emit('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
+      widget.card.addEventListener('click', () => this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
+      if (widget.resizeHandle) {
+        const s = { d: false, sx: 0, sy: 0, w: 0, h: 0 };
+        widget.resizeHandle.addEventListener('mousedown', e => { s.d = true; s.sx = e.clientX; s.sy = e.clientY; const r = widget.card.getBoundingClientRect(); s.w = r.width; s.h = r.height; this._emit('widget.resizestarted', dash, { widgetId: widget.id, value: widget.value }); e.preventDefault(); e.stopPropagation(); });
+        const move = e => { if (!s.d) return; const w = clamp(s.w + (e.clientX - s.sx), 120, 2000); const h = clamp(s.h + (e.clientY - s.sy), 64, 1400); if (widget.position?.mode === 'freeform') { widget.card.style.width = `${w}px`; widget.card.style.height = `${h}px`; widget.position.w = w; widget.position.h = h; } else { const gw = clamp(Math.round(w / 120), 1, 48); const gh = clamp(Math.round(h / 90), 1, 48); widget.card.style.gridColumn = `span ${gw}`; widget.card.style.gridRow = `span ${gh}`; widget.position.w = gw; widget.position.h = gh; } this._emit('widget.resized', dash, { widgetId: widget.id, value: widget.value, width: w, height: h }); };
+        const up = () => { s.d = false; };
+        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+        widget._cleanupResize = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+      }
+    }
+
+    _createWidgetDom(dash, widget, title, rawValue) {
+      const t = widget.type;
+      const built = this._buildCard(widget, title);
+      widget.card = built.card; widget.content = built.content; widget.label = built.label; widget.resizeHandle = built.resize;
+      const c = widget.content;
+      const data = rawValue;
+      const center = () => c.classList.add('dp-center');
+      if (t === 'text') {
+        center(); const el = document.createElement('div'); el.className = 'dp-text'; el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.text = el;
+      } else if (t === 'progress.bar') {
+        c.innerHTML = `<div><div style="width:100%;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden"><div class="dp-bar-fill" style="height:100%;width:0;background:var(--dp-accent);border-radius:999px"></div></div><div class="dp-bar-txt" style="text-align:right;margin-top:5px;font-size:12px;font-weight:700"></div></div>`; widget.dom.fill = c.querySelector('.dp-bar-fill'); widget.dom.text = c.querySelector('.dp-bar-txt');
+      } else if (t === 'ring.chart') {
+        center(); const r = 26, circ = 2 * Math.PI * r; c.innerHTML = `<div class="dp-ring"><svg width="64" height="64" viewBox="0 0 60 60"><circle cx="30" cy="30" r="${r}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="6"></circle><circle class="dp-ring-fill" cx="30" cy="30" r="${r}" fill="none" stroke="var(--dp-accent)" stroke-linecap="round" stroke-width="6" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"></circle></svg><div class="dp-ring-text">0%</div></div>`; widget.dom.ring = c.querySelector('.dp-ring-fill'); widget.dom.text = c.querySelector('.dp-ring-text');
+      } else if (t === 'status.light') {
+        center(); const el = document.createElement('div'); el.className = 'dp-status'; el.style.color = String(data || '#00d2ff'); el.style.background = String(data || '#00d2ff'); c.appendChild(el); widget.dom.light = el;
+      } else if (t === 'image') {
+        const img = document.createElement('img'); img.className = 'dp-img'; img.src = String(data || ''); c.appendChild(img); widget.dom.img = img;
+      } else if (t === 'iframe') {
+        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups'); fr.src = String(data || 'about:blank'); c.appendChild(fr); widget.dom.iframe = fr;
+      } else if (t === 'html') {
+        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-same-origin'); fr.srcdoc = sanitizeHTML(String(data || '')); c.appendChild(fr); widget.dom.iframe = fr;
+      } else if (t === 'audio') {
+        const a = document.createElement('audio'); a.controls = true; a.className = 'dp-audio'; a.src = String(data || ''); c.appendChild(a); widget.dom.audio = a;
+      } else if (t === 'log') {
+        const pre = document.createElement('pre'); pre.className = 'dp-log'; pre.textContent = Array.isArray(data?.lines) ? data.lines.join('\n') : String(data || '') + '\n'; c.appendChild(pre); widget.dom.log = pre;
+      } else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') {
+        const cvs = document.createElement('canvas'); cvs.style.width = '100%'; cvs.style.height = '100%'; cvs.style.borderRadius = '8px'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsChartRedraw = true;
+      } else if (t === 'table.grid') {
+        const wrap = document.createElement('div'); wrap.style.height = '100%'; wrap.style.overflow = 'auto'; c.appendChild(wrap); widget.dom.tableWrap = wrap; widget._needsTableRedraw = true;
+      } else if (t === 'control.button') {
+        const btn = document.createElement('button'); btn.className = 'dp-button'; btn.textContent = data?.label || title || 'Button'; btn.onclick = () => { this._setWidgetValue(dash, widget, data?.value ?? btn.textContent, 'ui'); this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }); }; c.appendChild(btn); widget.dom.button = btn;
+      } else if (t === 'control.input') {
+        const inp = document.createElement('input'); inp.className = 'dp-input'; inp.type = data?.inputType === 'number' ? 'number' : 'text'; inp.value = String(data?.value ?? data ?? ''); inp.placeholder = data?.placeholder || ''; inp.oninput = () => this._setWidgetValue(dash, widget, inp.value, 'ui'); c.appendChild(inp); widget.dom.input = inp; widget.inputEl = inp;
+      } else if (t === 'control.toggle') {
+        const wrap = document.createElement('div'); wrap.className = 'dp-toggle-wrap'; const track = document.createElement('div'); track.className = 'dp-toggle'; const thumb = document.createElement('div'); thumb.className = 'dp-toggle-thumb'; track.appendChild(thumb); const label = document.createElement('span'); const on = !!(data?.value ?? data); if (on) track.classList.add('dp-toggle-on'); label.textContent = on ? (data?.onLabel || 'On') : (data?.offLabel || 'Off'); wrap.append(track, label); wrap.onclick = () => this._setWidgetValue(dash, widget, { ...(isObj(widget.value) ? widget.value : {}), value: !(widget.value?.value ?? widget.value) }, 'ui'); c.appendChild(wrap); widget.dom.toggle = track; widget.dom.toggleLabel = label;
+      } else if (t === 'control.slider') {
+        const input = document.createElement('input'); input.className = 'dp-slider'; input.type = 'range'; input.min = data?.min ?? 0; input.max = data?.max ?? 100; input.step = data?.step ?? 1; input.value = data?.value ?? 0; const text = document.createElement('div'); text.style.cssText = 'text-align:right;font-size:12px;font-weight:700'; text.textContent = input.value; input.oninput = () => { text.textContent = input.value; this._setWidgetValue(dash, widget, Number(input.value), 'ui'); }; c.append(input, text); widget.dom.input = input; widget.dom.text = text;
+      } else if (t === 'control.select') {
+        const sel = document.createElement('select'); sel.className = 'dp-select'; (data?.options || []).forEach(opt => { const o = document.createElement('option'); o.textContent = opt.label ?? opt.value; o.value = String(opt.value); sel.appendChild(o); }); sel.value = String(data?.value ?? (data?.options?.[0]?.value ?? '')); sel.onchange = () => this._setWidgetValue(dash, widget, sel.value, 'ui'); c.appendChild(sel); widget.dom.select = sel;
+      } else if (t === 'terminal.console') {
+        const term = document.createElement('div'); term.className = 'dp-terminal'; const out = document.createElement('div'); out.className = 'dp-terminal-output'; const inp = document.createElement('input'); inp.className = 'dp-terminal-input'; inp.placeholder = 'Type command and press Enter'; inp.onkeydown = e => { if (e.key === 'Enter') { const cmd = inp.value; inp.value = ''; out.textContent += `> ${cmd}\n`; this._setWidgetValue(dash, widget, cmd, 'ui'); } }; term.append(out, inp); c.appendChild(term); widget.dom.termOut = out; widget.dom.termIn = inp;
+      } else if (t === 'editor.code') {
+        const ta = document.createElement('textarea'); ta.className = 'dp-textarea'; ta.spellcheck = false; ta.value = String(data?.value ?? ''); ta.style.minHeight = '140px'; ta.style.fontFamily = 'monospace'; ta.oninput = () => this._setWidgetValue(dash, widget, ta.value, 'ui'); c.appendChild(ta); widget.dom.textarea = ta; widget.inputEl = ta;
+      } else if (t === 'viewer.minimap') {
+        const cvs = document.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
+      } else if (t === 'stage') {
+        const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
+      } else {
+        const el = document.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
+      }
+      this._wireWidget(dash, widget);
+      this._applyWidgetStyle(widget);
+      return widget;
+    }
+
+    _applyWidgetStyle(widget) {
+      if (!widget?.card) return;
+      const s = widget.style || {};
+      if (s.accent) widget.card.style.setProperty('--dp-accent', s.accent);
+      if (s.background) widget.card.style.background = s.background;
+      if (s.foreground) widget.card.style.color = s.foreground;
+      if (s.radius !== undefined) widget.card.style.borderRadius = `${s.radius}px`;
+      if (s.opacity !== undefined) widget.card.style.opacity = `${s.opacity}`;
+      if (s.shadow) widget.card.style.boxShadow = s.shadow;
+      if (s.border) widget.card.style.border = s.border;
+      if (s.padding !== undefined) widget.card.style.padding = `${s.padding}px`;
+    }
+
+    _installResizing(dash) {
+      const h = document.createElement('div'); h.className = 'dp-resize dp-no-drag'; dash.container.appendChild(h);
+      const state = { resizing: false, pointerId: null, sx: 0, sy: 0, w: 0, h: 0 };
+      const down = e => {
+        if (dash.window.mode !== 'windowed' && dash.window.mode !== 'modal') return;
+        state.resizing = true;
+        state.pointerId = e.pointerId;
+        state.sx = e.clientX;
+        state.sy = e.clientY;
+        const r = dash.container.getBoundingClientRect();
+        state.w = r.width;
+        state.h = r.height;
+        this._bringToFront(dash);
+        try { h.setPointerCapture(e.pointerId); } catch {}
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      const move = e => {
+        if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        const w = clamp(state.w + (e.clientX - state.sx), 260, window.innerWidth);
+        const ht = clamp(state.h + (e.clientY - state.sy), 180, window.innerHeight);
         dash.window.width = w;
         dash.window.height = ht;
         dash.container.style.width = `${w}px`;
@@ -765,6 +1019,14 @@
       const d = widget.value || {}; const b = d.bounds || { x: 0, y: 0, w: 100, h: 100 }; const pts = Array.isArray(d.points) ? d.points : []; const sx = w / (b.w || 1), sy = h / (b.h || 1);
       ctx.strokeStyle = 'rgba(255,255,255,0.24)'; ctx.strokeRect(0, 0, w, h);
       pts.forEach(pt => { const x = (pt.x - (b.x || 0)) * sx; const y = (pt.y - (b.y || 0)) * sy; ctx.fillStyle = pt.color || '#00d2ff'; ctx.beginPath(); ctx.arc(x, y, 4 * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); });
+    }
+
+    _drawStage(widget) {
+      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return; const src = Scratch?.vm?.runtime?.renderer?.canvas; if (!src) return;
+      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      ctx.clearRect(0, 0, w, h); try { ctx.drawImage(src, 0, 0, w, h); } catch {}
+    }
+
     }
 
     _drawStage(widget) {
