@@ -15,6 +15,7 @@
   const LEGACY_STORAGE_KEYS = ['dashey:pro:bundle', 'dashey:v2:bundle'];
   const MAX_HISTORY = 100;
   const OFFSCREEN_LIMIT = 10000;
+  const MAX_CANVAS_DIMENSION = 4096;
 
   const LOGO_SVG = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160.15225" height="160.15225" viewBox="0,0,160.15225,160.15225"><defs><linearGradient x1="249.4437" y1="157.32369" x2="258.8874" y2="157.32369" gradientUnits="userSpaceOnUse" id="color-1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ffde00"/></linearGradient></defs><g transform="translate(-159.92388,-99.92387)"><g stroke-miterlimit="10"><path d="M174.92388,257.57613c-6.90356,0 -12.5,-5.59644 -12.5,-12.5v-130.15225c0,-6.90356 5.59644,-12.5 12.5,-12.5h130.15225c6.90356,0 12.5,5.59644 12.5,12.5v130.15225c0,6.90356 -5.59644,12.5 -12.5,12.5z" fill="#ffffff" stroke="#000000" stroke-width="5" stroke-linecap="butt"/><path d="M163.07952,130.49673h152.31777" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round"/><path d="M292.245,109.19128l14.6225,14.62251" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M306.8675,109.19128l-14.6225,14.6225" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M245.63576,123.66147h14.01324" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M268.67879,124.27074c-0.27614,0 -0.5,-0.22386 -0.5,-0.5v-14.53641c0,-0.27614 0.22386,-0.5 0.5,-0.5h14.53641c0.27614,0 0.5,0.22386 0.5,0.5v14.53641c0,0.27614 -0.22386,0.5 -0.5,0.5z" fill="#f5f8fa" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M174.47687,169.81375c-2.76142,0 -5,-2.23858 -5,-5v-22.29137c0,-2.76142 2.23858,-5 5,-5h52.75492c2.76142,0 5,2.23858 5,5v22.29137c0,2.76142 -2.23858,5 -5,5z" fill="#ff0000" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M246.82781,169.20448c-2.76142,0 -5,-2.23858 -5,-5v-21.6821c0,-2.76142 2.23858,-5 5,-5h20.15892c2.76142,0 5,2.23858 5,5v21.6821c0,2.76142 -2.23858,5 -5,5z" fill="#1d00ff" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><g fill="none" stroke-width="3.75" stroke-linecap="round"><path d="M249.4437,157.32369h14.92714" stroke="#ffffff"/><path d="M249.4437,157.32369h9.4437" stroke="url(#color-1)"/></g><text transform="translate(250.35761,153.79052) scale(0.30623,0.30623)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">15</tspan></text><text transform="translate(171.58436,159.43682) scale(0.5,0.5)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">test :3</tspan></text></g></g></svg><!--rotationCenter:80.07612499999999:80.076125-->';
   const LOGO_URI = `data:image/svg+xml,${encodeURIComponent(LOGO_SVG)}`;
@@ -231,6 +232,8 @@
         .dp-window { position: fixed; display: none; flex-direction: column; overflow: hidden; border-radius: 12px; color: var(--dp-fg); font-family: var(--dp-font); box-shadow: var(--dp-shadow); background: var(--dp-bg); border: 1px solid var(--dp-border); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); pointer-events: auto; }
         .dp-header { user-select: none; -webkit-user-select: none; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: rgba(0,0,0,0.28); border-bottom: 1px solid rgba(255,255,255,0.06); position: relative; min-height: 38px; }
         .dp-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
+        .dp-body { flex: 1; overflow: auto; padding: 12px; min-height: 0; }
+        .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 48px; gap: 12px; align-content: start; min-height: 100%; min-width: 0; }
         .dp-body { flex: 1; overflow: auto; padding: 12px; }
         .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-content: start; min-height: 100%; }
         .dp-grid.dp-freeform { min-height: 100%; }
@@ -240,6 +243,10 @@
         .dp-card.dp-can-move .dp-label { cursor: grab; touch-action: none; }
         .dp-card.dp-moving .dp-label { cursor: grabbing; }
         .dp-card.dp-no-resize > .dp-resize { display: none; }
+        .dp-card.dp-widget-fullscreen { grid-column: 1 / -1 !important; grid-row: 1 / span 1 !important; width: 100% !important; height: 100% !important; min-height: 0 !important; }
+        .dp-card.dp-widget-fullscreen .dp-label { display: none; }
+        .dp-card.dp-widget-fullscreen .dp-resize { display: none; }
+        .dp-card.dp-widget-fullscreen > div:nth-child(2) { height: 100% !important; min-height: 0; }
         .dp-card.dp-widget-fullscreen { grid-column: 1 / -1 !important; grid-row: 1 / -1 !important; width: 100% !important; height: 100% !important; min-height: calc(100% - 2px); }
         .dp-card.dp-widget-fullscreen .dp-label { display: none; }
         .dp-card.dp-widget-fullscreen .dp-resize { display: none; }
@@ -266,8 +273,9 @@
         .dp-ring svg { transform: rotate(-90deg); overflow: visible; }
         .dp-ring-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; }
         .dp-status { width: 24px; height: 24px; border-radius: 50%; margin: 0 auto; box-shadow: 0 0 10px currentColor; }
-        .dp-iframe, .dp-img, .dp-stage-canvas { width: 100%; height: 100%; border: 0; border-radius: 8px; background: rgba(0,0,0,0.2); }
-        .dp-stage-canvas { object-fit: contain; background: #000; }
+        .dp-iframe, .dp-img, .dp-stage-canvas { width: 100%; height: 100%; border: 0; border-radius: 8px; background: rgba(0,0,0,0.2); box-sizing: border-box; }
+        .dp-stage-canvas { display: block; object-fit: contain; background: #000; min-width: 0; min-height: 0; max-width: 100%; max-height: 100%; contain: strict; }
+        .dp-stage-card { min-height: 0; }
         .dp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
         .dp-table th, .dp-table td { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 6px 8px; text-align: left; }
         .dp-table th { cursor: pointer; position: sticky; top: 0; background: rgba(0,0,0,0.22); }
@@ -635,7 +643,7 @@
     _buildCard(widget, title) {
       const card = document.createElement('div'); card.className = 'dp-card'; card.dataset.widgetId = widget.id;
       const label = document.createElement('div'); label.className = 'dp-label'; label.textContent = title || '';
-      const content = document.createElement('div'); content.style.width = '100%'; content.style.height = 'calc(100% - 20px)';
+      const content = document.createElement('div'); content.className = 'dp-content'; content.style.width = '100%'; content.style.height = 'calc(100% - 20px)'; content.style.minHeight = '0'; content.style.overflow = 'hidden';
       const resize = document.createElement('div'); resize.className = 'dp-resize';
       card.append(label, content, resize);
       return { card, label, content, resize };
@@ -822,6 +830,7 @@
       } else if (t === 'viewer.minimap') {
         const cvs = document.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
       } else if (t === 'stage' || t === 'stage.expand') {
+        widget.card.classList.add('dp-stage-card');
         widget.camera = this._normalizeStageCamera(widget.camera || data);
         const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
       } else {
@@ -1099,6 +1108,12 @@
     _drawStage(widget) {
       const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
       const src = this._getStageCanvas();
+      const r = c.getBoundingClientRect();
+      const cssW = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(r.width || 2)));
+      const cssH = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(r.height || 2)));
+      const w = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssW * devicePixelRatio)));
+      const h = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssH * devicePixelRatio)));
+      if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
       const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
@@ -1149,6 +1164,32 @@
 
     createDashboard(args) { const id = String(args.DASH_ID); const title = String(args.TITLE || id); if (this.dashboards[id]) { this.setDashboardTitle({ DASH_ID: id, TITLE: title }); this.showDashboard({ DASH_ID: id }); return; } const d = this._makeDashboard(id, title); this.dashboards[id] = d; this._createHostAndWindow(d); this._renderDashboardFromModel(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
     createFromTemplate(args) { const tpl = TEMPLATES[String(args.TEMPLATE)] || TEMPLATES.blank; this.createDashboard({ DASH_ID: String(args.DASH_ID), TITLE: tpl.title }); const d = this._getDash(args.DASH_ID); d.layout = clone(tpl.layout); tpl.widgets.forEach(w => { this.addWidget({ DASH_ID: d.id, WIDGET_ID: w.id, TYPE: w.type, TITLE: w.title || w.id, VALUE: JSON.stringify(w.value ?? '') }); this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: w.pos?.x || 0, Y: w.pos?.y || 0, W: w.pos?.w || 3, H: w.pos?.h || 2 }); }); this._savePersisted(); }
+    _renderDashboardFromModel(d) {
+      if (!d?.grid) return;
+      d.grid.innerHTML = '';
+      d.grid.classList.toggle('dp-freeform', d.layout.mode === 'freeform');
+      const hasFullscreen = Object.values(d.widgets).some(w => w?.fullscreen);
+      if (d.layout.mode === 'freeform') {
+        d.grid.style.position = 'relative';
+        d.grid.style.display = 'block';
+        d.grid.style.gridAutoRows = '';
+      } else {
+        d.grid.style.position = '';
+        d.grid.style.display = 'grid';
+        d.grid.style.gridTemplateColumns = `repeat(${clamp(num(d.layout.columns, 12), 1, 48)}, minmax(0, 1fr))`;
+        d.grid.style.gridAutoRows = hasFullscreen ? 'minmax(0, 1fr)' : `${num(d.layout.rowHeight, 48)}px`;
+        d.grid.style.alignContent = hasFullscreen ? 'stretch' : 'start';
+        d.grid.style.gap = hasFullscreen ? '0px' : `${num(d.layout.gap, 12)}px`;
+      }
+      for (const wid in d.widgets) {
+        const w = d.widgets[wid];
+        if (w?.card) {
+          d.grid.appendChild(w.card);
+          this._applyWidgetPosition(d, w);
+        }
+      }
+      this._refreshWidgetVisibility(d);
+    }
     _renderDashboardFromModel(d) { if (!d?.grid) return; d.grid.innerHTML = ''; d.grid.classList.toggle('dp-freeform', d.layout.mode === 'freeform'); if (d.layout.mode === 'freeform') { d.grid.style.position = 'relative'; d.grid.style.display = 'block'; } else { d.grid.style.position = ''; d.grid.style.display = 'grid'; d.grid.style.gridTemplateColumns = `repeat(${clamp(num(d.layout.columns, 12), 1, 48)}, minmax(0, 1fr))`; d.grid.style.gap = `${num(d.layout.gap, 12)}px`; } for (const wid in d.widgets) { const w = d.widgets[wid]; if (w?.card) { d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } } this._refreshWidgetVisibility(d); }
     showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
     hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.container.style.display = 'none'; this._savePersisted(); }
@@ -1189,6 +1230,7 @@
     appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._savePersisted(); }
     setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._savePersisted(); }
     setWidgetInteraction(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.permissions = { move: normalizeInteractionMode(args.MOVE), resize: normalizeInteractionMode(args.RESIZE) }; this._applyWidgetPermissions(w); this._savePersisted(); }
+    setWidgetFullscreen(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; if (!!args.ON && Object.keys(d.widgets).length !== 1) return; w.fullscreen = !!args.ON; this._renderDashboardFromModel(d); this._savePersisted(); }
     setWidgetFullscreen(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; if (!!args.ON && Object.keys(d.widgets).length !== 1) return; w.fullscreen = !!args.ON; this._applyWidgetPosition(d, w); this._savePersisted(); }
     setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) this._savePersisted(); }
     changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) this._savePersisted(); }
