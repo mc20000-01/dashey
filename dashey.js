@@ -1114,7 +1114,6 @@
       const w = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssW * devicePixelRatio)));
       const h = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssH * devicePixelRatio)));
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
