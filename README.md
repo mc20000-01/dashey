@@ -18,8 +18,8 @@ Dashey is an unsandboxed TurboWarp/Scratch VM extension for building draggable, 
 
 - Removed the old separate versioned build and merged the best runtime into one `dashey.js` extension.
 - Removed old versioned branding from user-facing extension metadata, errors, docs, and runtime globals.
-- Rebuilt window chrome so dashboard windows are reliably draggable with pointer events, touch/mouse/pen support, pointer capture, much looser offscreen movement, and proper z-index focus.
-- Rebuilt window resizing so the bottom-right handle works with mouse, touch, and pen input, including sizes larger than the visible TurboWarp/browser viewport.
+- Rebuilt window chrome so dashboard windows are reliably draggable with pointer events, touch/mouse/pen support, pointer capture, viewport clamping, and proper z-index focus.
+- Rebuilt window resizing so the bottom-right handle works with mouse, touch, and pen input.
 - Fixed persistence/import/load hydration: saved widgets are recreated before rendering, so restored dashboards no longer fail with empty or broken windows.
 - Added migration support for dashboards saved by previous development builds.
 - Added safer control behavior so close/minimize/fullscreen buttons do not accidentally start a drag.
@@ -39,5 +39,4 @@ Create a project that runs these blocks in order:
 2. Add a `text` widget with ID `hello`.
 3. Show dashboard `main`.
 4. Drag the window by the header and resize it from the lower-right corner.
-5. Drag the window partly or fully beyond the visible TurboWarp area; if you lose it, use the `set dashboard [DASH_ID] window x [X] y [Y] w [W] h [H]` block to bring it back.
-6. Reload the extension/project and confirm the dashboard restores without errors.
+5. Reload the extension/project and confirm the dashboard restores without errors.
