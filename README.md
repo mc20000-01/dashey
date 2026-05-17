@@ -14,7 +14,7 @@
 - **Floating dashboard windows** that can be shown, hidden, moved, resized, focused, snapped, or fullscreened.
 - **Loose offscreen movement** so dashboards can be dragged partly or fully outside the visible TurboWarp/browser area when you need more workspace.
 - **Persistent dashboards** saved in the browser, including window position, size, widgets, pages, themes, variables, links, and bindings.
-- **Widget blocks** for text, progress bars, rings, status lights, images, stage previews, audio, iframes, sanitized HTML, logs, charts, tables, controls, terminals, code editors, and minimaps.
+- **Widget blocks** for text, metrics, badges, progress bars, rings, gauges, status lights, color swatches, images, stage previews and virtual expanded stages, audio, iframes, sanitized HTML/Markdown, logs, lists, timelines, charts, tables, controls, terminals, code editors, clocks, spacers, and minimaps.
 - **Project integration** through Scratch variables/lists, widget links, dashboard variables, import/export JSON, and event hats for clicks, hovers, changes, drags, resizes, and page changes.
 - **Built-in safety options** for iframe/html widgets, including sandbox modes and HTML sanitization.
 
@@ -42,6 +42,8 @@ Dashey windows are designed to feel like small desktop panels:
 
 - Drag a dashboard by its top bar.
 - Resize with the bottom-right grip.
+- In freeform layouts, drag widgets by their label and resize them from their own bottom-right grip. Use `set widget [WIDGET_ID] on dashboard [DASH_ID] move [MOVE] resize [RESIZE]` to allow `user`, `code`, `both`, or `none` per widget.
+- If a dashboard has exactly one widget, use `set widget [WIDGET_ID] fullscreen [ON] on dashboard [DASH_ID]` to let that widget fill the dashboard body.
 - Click a dashboard to bring it to the front.
 - Use window modes for normal, snapped-left, snapped-right, snapped-top, snapped-bottom, fullscreen, and modal layouts.
 - Move windows far offscreen if you want extra workspace. If one gets lost, use `set dashboard [DASH_ID] window x [X] y [Y] w [W] h [H]` to bring it back, for example `x: 80`, `y: 80`, `w: 700`, `h: 480`.
@@ -50,9 +52,23 @@ Dashey windows are designed to feel like small desktop panels:
 
 - **Debug overlay:** text values, logs, tables, and status lights.
 - **Game control panel:** buttons, sliders, toggles, selects, and Scratch variable bindings.
-- **Live monitor:** line/bar charts, progress bars, ring charts, and minimaps.
-- **Presentation panel:** images, sanitized HTML, iframe embeds, audio, and stage previews.
+- **Live monitor:** line/bar charts, progress bars, ring charts, gauges, metric numbers, status lights, color swatches, and minimaps.
+- **Presentation panel:** images, sanitized HTML/Markdown, iframe embeds, audio, clocks, badges, spacers, stage previews, and expanded virtual stage cameras.
 - **Tool window:** code editor widgets, terminal-style output, and linked dashboard variables.
+
+
+## Virtual expanded stages
+
+Use a `stage.expand` widget when a dashboard window should act like its own camera view into the Scratch stage. The virtual stage camera stores its own `x`, `y`, `zoom`, `direction`, `width`, and `height`, so multiple Dashey windows can behave like separate fake stages for OS/window-manager style projects.
+
+Useful blocks:
+
+- `set virtual stage [STAGE_ID] camera x [X] y [Y] zoom [ZOOM] direction [DIRECTION]`
+- `change virtual stage [STAGE_ID] camera x [DX] y [DY] zoom [DZOOM] direction [DDIRECTION]`
+- `set virtual stage [STAGE_ID] size w [WIDTH] h [HEIGHT]`
+- `localise [VALUE] as [PROP] to stage [STAGE_ID]`
+- `normalise [VALUE] as [PROP] from stage [STAGE_ID]`
+- `virtual stage [STAGE_ID] [PROP]`
 
 ## Saving and sharing
 
