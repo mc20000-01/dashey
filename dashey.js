@@ -1,704 +1,860 @@
-// Name         :  Dashey Pro
+// Name         :  Dashey
 // ID           :  dashey
-// Description  :  Advanced multi-window dashboard builder with live stage, HTML embeds, and interactive grid widgets.
+// Description  :  Advanced multi-window dashboard runtime for TurboWarp unsandboxed mode.
 // License      :  GPL-3.0-only
 
 (function (Scratch) {
   'use strict';
 
+  if (!Scratch?.extensions?.unsandboxed) {
+    throw new Error('Dashey must be run unsandboxed.');
+  }
+
+  const EXT_ID = 'dashey';
+  const STORAGE_KEY = 'dashey:bundle';
+  const LEGACY_STORAGE_KEYS = ['dashey:pro:bundle', 'dashey:v2:bundle'];
+  const MAX_HISTORY = 100;
+
+  const LOGO_SVG = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160.15225" height="160.15225" viewBox="0,0,160.15225,160.15225"><defs><linearGradient x1="249.4437" y1="157.32369" x2="258.8874" y2="157.32369" gradientUnits="userSpaceOnUse" id="color-1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ffde00"/></linearGradient></defs><g transform="translate(-159.92388,-99.92387)"><g stroke-miterlimit="10"><path d="M174.92388,257.57613c-6.90356,0 -12.5,-5.59644 -12.5,-12.5v-130.15225c0,-6.90356 5.59644,-12.5 12.5,-12.5h130.15225c6.90356,0 12.5,5.59644 12.5,12.5v130.15225c0,6.90356 -5.59644,12.5 -12.5,12.5z" fill="#ffffff" stroke="#000000" stroke-width="5" stroke-linecap="butt"/><path d="M163.07952,130.49673h152.31777" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round"/><path d="M292.245,109.19128l14.6225,14.62251" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M306.8675,109.19128l-14.6225,14.6225" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M245.63576,123.66147h14.01324" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M268.67879,124.27074c-0.27614,0 -0.5,-0.22386 -0.5,-0.5v-14.53641c0,-0.27614 0.22386,-0.5 0.5,-0.5h14.53641c0.27614,0 0.5,0.22386 0.5,0.5v14.53641c0,0.27614 -0.22386,0.5 -0.5,0.5z" fill="#f5f8fa" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M174.47687,169.81375c-2.76142,0 -5,-2.23858 -5,-5v-22.29137c0,-2.76142 2.23858,-5 5,-5h52.75492c2.76142,0 5,2.23858 5,5v22.29137c0,2.76142 -2.23858,5 -5,5z" fill="#ff0000" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M246.82781,169.20448c-2.76142,0 -5,-2.23858 -5,-5v-21.6821c0,-2.76142 2.23858,-5 5,-5h20.15892c2.76142,0 5,2.23858 5,5v21.6821c0,2.76142 -2.23858,5 -5,5z" fill="#1d00ff" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><g fill="none" stroke-width="3.75" stroke-linecap="round"><path d="M249.4437,157.32369h14.92714" stroke="#ffffff"/><path d="M249.4437,157.32369h9.4437" stroke="url(#color-1)"/></g><text transform="translate(250.35761,153.79052) scale(0.30623,0.30623)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">15</tspan></text><text transform="translate(171.58436,159.43682) scale(0.5,0.5)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">test :3</tspan></text></g></g></svg><!--rotationCenter:80.07612499999999:80.076125-->';
+  const LOGO_URI = `data:image/svg+xml,${encodeURIComponent(LOGO_SVG)}`;
+
+  const DEFAULT_THEME = {
+    id: 'dark',
+    name: 'Dark',
+    vars: {
+      '--dp-bg': '#14161a',
+      '--dp-fg': '#ffffff',
+      '--dp-accent': '#00d2ff',
+      '--dp-surface': 'rgba(255,255,255,0.05)',
+      '--dp-surface-2': 'rgba(255,255,255,0.08)',
+      '--dp-border': 'rgba(255,255,255,0.09)',
+      '--dp-shadow': '0 25px 50px -12px rgba(0,0,0,0.5)',
+      '--dp-radius': '12px',
+      '--dp-font': "Inter, Segoe UI, sans-serif"
+    }
+  };
+
+  const TEMPLATES = {
+    blank: { title: 'Blank Dashboard', layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false }, widgets: [] },
+    monitor: {
+      title: 'Monitoring Panel', layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false },
+      widgets: [
+        { id: 'cpu', type: 'chart.line', title: 'CPU', pos: { x: 0, y: 0, w: 6, h: 4 }, value: { series: [{ name: 'cpu', values: [10, 20, 16, 35] }], labels: ['1', '2', '3', '4'] } },
+        { id: 'ram', type: 'progress.bar', title: 'RAM', pos: { x: 6, y: 0, w: 3, h: 2 }, value: 54 },
+        { id: 'log', type: 'log', title: 'Log', pos: { x: 0, y: 4, w: 12, h: 4 }, value: { lines: ['Ready.'] } }
+      ]
+    },
+    control: {
+      title: 'Control Center', layout: { mode: 'dock', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false },
+      widgets: [
+        { id: 'start', type: 'control.button', title: 'Start', pos: { x: 0, y: 0, w: 3, h: 2 }, value: { label: 'Start', value: 'start' } },
+        { id: 'speed', type: 'control.slider', title: 'Speed', pos: { x: 3, y: 0, w: 6, h: 2 }, value: { value: 50, min: 0, max: 100, step: 1 } },
+        { id: 'mode', type: 'control.select', title: 'Mode', pos: { x: 9, y: 0, w: 3, h: 2 }, value: { value: 'auto', options: [{ label: 'Auto', value: 'auto' }, { label: 'Manual', value: 'manual' }] } }
+      ]
+    }
+  };
+
+  const WIDGET_TYPES = [
+    'text', 'progress.bar', 'ring.chart', 'status.light', 'image', 'stage', 'audio', 'iframe', 'html', 'log',
+    'chart.line', 'chart.bar', 'chart.multi', 'table.grid', 'control.button', 'control.input', 'control.toggle',
+    'control.slider', 'control.select', 'terminal.console', 'editor.code', 'viewer.minimap'
+  ];
+
+  const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
+  const clone = v => { try { return structuredClone(v); } catch { return JSON.parse(JSON.stringify(v)); } };
+  const uid = (p = 'id') => `${p}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
+  const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+  const jparse = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
+  const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+  function sanitizeHTML(input) {
+    const doc = new DOMParser().parseFromString(String(input), 'text/html');
+    const blocked = new Set(['script', 'iframe', 'object', 'embed', 'link', 'meta', 'base']);
+    const tw = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+    const kill = [];
+    while (tw.nextNode()) {
+      const el = tw.currentNode;
+      if (blocked.has(el.tagName.toLowerCase())) { kill.push(el); continue; }
+      [...el.attributes].forEach(a => {
+        const n = a.name.toLowerCase(); const v = String(a.value).toLowerCase();
+        if (n.startsWith('on')) el.removeAttribute(a.name);
+        if ((n === 'src' || n === 'href') && v.startsWith('javascript:')) el.removeAttribute(a.name);
+      });
+    }
+    kill.forEach(el => el.remove());
+    return doc.body.innerHTML;
+  }
+
   class Dashey {
     constructor() {
-      this._disposed = false;
       this.dashboards = Object.create(null);
-      this.globalZIndex = 500;
-      
-      // Bind RAF loop for Stage widgets
-      this._renderLoop = this._renderLoop.bind(this);
-      this.rafId = requestAnimationFrame(this._renderLoop);
-
-      this._injectGlobalStyles();
+      this.themes = { dark: clone(DEFAULT_THEME) };
+      this.globalZ = 500;
+      this.undoStack = [];
+      this.redoStack = [];
+      this.renderQueued = false;
+      this._disposed = false;
+      this._stageLoop = this._stageLoop.bind(this);
+      this._injectStyles();
+      this._loadPersisted();
+      this._raf = requestAnimationFrame(this._stageLoop);
+      window.addEventListener('beforeunload', () => this._savePersisted());
     }
 
     getInfo() {
       return {
-        id: 'dashey',
-        name: 'Dashey Pro',
-        color1: '#00d2ff',
-        color2: '#00a8cc',
-        color3: '#007f99',
+        id: EXT_ID,
+        name: 'Dashey',
+        iconURI: LOGO_URI,
+        color1: '#00d2ff', color2: '#00a8cc', color3: '#007f99',
         blocks: [
-          // --- DASHBOARD MANAGEMENT ---
-          {
-            opcode: 'createDash',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'initialize dash [DASH_ID] title [TITLE]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'My Dashboard' }
-            }
-          },
-          {
-            opcode: 'doAction',
-            blockType: Scratch.BlockType.COMMAND,
-            text: '[ACTION] dash [DASH_ID]',
-            arguments: {
-              ACTION: { type: Scratch.ArgumentType.STRING, menu: 'ACTION_MENU' },
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }
-            }
-          },
-          {
-            opcode: 'setColors',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] set bg: [BG] text: [FG] accent: [ACC]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              BG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#14161a' },
-              FG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#ffffff' },
-              ACC: { type: Scratch.ArgumentType.COLOR, defaultValue: '#00d2ff' }
-            }
-          },
+          { opcode: 'createDashboard', blockType: Scratch.BlockType.COMMAND, text: 'create dashboard [DASH_ID] titled [TITLE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'My Dashboard' } } },
+          { opcode: 'createFromTemplate', blockType: Scratch.BlockType.COMMAND, text: 'create dashboard [DASH_ID] from template [TEMPLATE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, TEMPLATE: { type: Scratch.ArgumentType.STRING, menu: 'TEMPLATE_MENU' } } },
+          { opcode: 'showDashboard', blockType: Scratch.BlockType.COMMAND, text: 'show dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'hideDashboard', blockType: Scratch.BlockType.COMMAND, text: 'hide dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'destroyDashboard', blockType: Scratch.BlockType.COMMAND, text: 'destroy dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'setDashboardTitle', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] title to [TITLE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Title' } } },
+          { opcode: 'setDashboardLayout', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] layout [MODE] columns [COLS] row height [ROW] snap [SNAP]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, MODE: { type: Scratch.ArgumentType.STRING, menu: 'LAYOUT_MENU' }, COLS: { type: Scratch.ArgumentType.NUMBER, defaultValue: 12 }, ROW: { type: Scratch.ArgumentType.NUMBER, defaultValue: 48 }, SNAP: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: true } } },
+          { opcode: 'setDashboardTheme', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] theme [THEME]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, THEME: { type: Scratch.ArgumentType.STRING, menu: 'THEME_MENU' } } },
+          { opcode: 'setDashboardColor', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] colors bg [BG] fg [FG] accent [ACC]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, BG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#14161a' }, FG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#ffffff' }, ACC: { type: Scratch.ArgumentType.COLOR, defaultValue: '#00d2ff' } } },
+          { opcode: 'setDashboardWindow', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] window x [X] y [Y] w [W] h [H]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 80 }, Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 80 }, W: { type: Scratch.ArgumentType.NUMBER, defaultValue: 700 }, H: { type: Scratch.ArgumentType.NUMBER, defaultValue: 480 } } },
+          { opcode: 'setWindowMode', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] window mode [MODE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, MODE: { type: Scratch.ArgumentType.STRING, menu: 'WINDOW_MODE_MENU' } } },
           '---',
-          // --- WIDGET MANAGEMENT ---
-          {
-            opcode: 'addWidget',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] add [TYPE] widget [WIDGET_ID] label: [LABEL] data: [VALUE]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              TYPE: { type: Scratch.ArgumentType.STRING, menu: 'WIDGET_TYPES' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              LABEL: { type: Scratch.ArgumentType.STRING, defaultValue: 'Metric' },
-              VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Hello' }
-            }
-          },
-          {
-            opcode: 'updateWidget',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] update widget [WIDGET_ID] to [VALUE]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: 'New Data' }
-            }
-          },
-          {
-            opcode: 'appendLogWidget',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] append [VALUE] to log widget [WIDGET_ID]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '> Event occurred' }
-            }
-          },
+          { opcode: 'addWidget', blockType: Scratch.BlockType.COMMAND, text: 'add [TYPE] widget [WIDGET_ID] to dashboard [DASH_ID] titled [TITLE] value [VALUE]', arguments: { TYPE: { type: Scratch.ArgumentType.STRING, menu: 'WIDGET_MENU' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Widget' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '' } } },
+          { opcode: 'updateWidget', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] on dashboard [DASH_ID] value to [VALUE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Hello' } } },
+          { opcode: 'appendLog', blockType: Scratch.BlockType.COMMAND, text: 'append [VALUE] to log widget [WIDGET_ID] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'log1' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '> message' } } },
+          { opcode: 'setWidgetPosition', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] position x [X] y [Y] w [W] h [H] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, W: { type: Scratch.ArgumentType.NUMBER, defaultValue: 3 }, H: { type: Scratch.ArgumentType.NUMBER, defaultValue: 2 } } },
+          { opcode: 'setWidgetStyle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] style key [KEY] value [VALUE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, KEY: { type: Scratch.ArgumentType.STRING, defaultValue: 'accent' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '#00d2ff' } } },
+          { opcode: 'setWidgetShape', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] shape [SHAPE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'SHAPE_MENU' } } },
+          { opcode: 'setWidgetTitle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] title to [TITLE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Widget' } } },
+          { opcode: 'removeWidget', blockType: Scratch.BlockType.COMMAND, text: 'remove widget [WIDGET_ID] from dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
           '---',
-          // --- LAYOUT & STYLING ---
-          {
-            opcode: 'setWidgetLayout',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] set widget [WIDGET_ID] size [SIZE] and order [ORDER]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              SIZE: { type: Scratch.ArgumentType.STRING, menu: 'SIZE_MENU' },
-              ORDER: { type: Scratch.ArgumentType.NUMBER, defaultValue: 1 }
-            }
-          },
-          {
-            opcode: 'setWidgetShape',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] set widget [WIDGET_ID] shape [SHAPE]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'SHAPE_MENU' }
-            }
-          },
-          {
-            opcode: 'removeWidget',
-            blockType: Scratch.BlockType.COMMAND,
-            text: 'on dash [DASH_ID] remove widget [WIDGET_ID]',
-            arguments: {
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' },
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }
-            }
-          },
+          { opcode: 'bindWidgetToVar', blockType: Scratch.BlockType.COMMAND, text: 'bind widget [WIDGET_ID] [DIR] to variable [VAR] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, DIR: { type: Scratch.ArgumentType.STRING, menu: 'BIND_DIR_MENU' }, VAR: { type: Scratch.ArgumentType.STRING, defaultValue: 'score' } } },
+          { opcode: 'linkWidgets', blockType: Scratch.BlockType.COMMAND, text: 'link widget [FROM] output to widget [TO] input on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, FROM: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, TO: { type: Scratch.ArgumentType.STRING, defaultValue: 'w2' } } },
+          { opcode: 'setDashboardVar', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard variable [NAME] to [VALUE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, NAME: { type: Scratch.ArgumentType.STRING, defaultValue: 'var' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '0' } } },
+          { opcode: 'changeDashboardVar', blockType: Scratch.BlockType.COMMAND, text: 'change dashboard variable [NAME] by [VALUE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, NAME: { type: Scratch.ArgumentType.STRING, defaultValue: 'var' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '1' } } },
+          { opcode: 'getDashboardVar', blockType: Scratch.BlockType.REPORTER, text: 'dashboard variable [NAME] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, NAME: { type: Scratch.ArgumentType.STRING, defaultValue: 'var' } } },
+          { opcode: 'getWidgetValue', blockType: Scratch.BlockType.REPORTER, text: 'widget [WIDGET_ID] value on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
           '---',
-          // --- EVENTS ---
-          {
-            opcode: 'whenWidgetClicked',
-            blockType: Scratch.BlockType.HAT,
-            text: 'when widget [WIDGET_ID] clicked on dash [DASH_ID]',
-            isEdgeActivated: false,
-            arguments: {
-              WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' },
-              DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }
-            }
-          }
+          { opcode: 'saveDashboard', blockType: Scratch.BlockType.COMMAND, text: 'save dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'loadDashboard', blockType: Scratch.BlockType.COMMAND, text: 'load dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'exportDashboard', blockType: Scratch.BlockType.REPORTER, text: 'export dashboard [DASH_ID] as JSON', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } },
+          { opcode: 'importDashboard', blockType: Scratch.BlockType.COMMAND, text: 'import dashboard [JSON] as [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, JSON: { type: Scratch.ArgumentType.STRING, defaultValue: '{"schemaVersion":"2.0.0"}' } } },
+          { opcode: 'undo', blockType: Scratch.BlockType.COMMAND, text: 'undo last dashboard action' },
+          { opcode: 'redo', blockType: Scratch.BlockType.COMMAND, text: 'redo last dashboard action' },
+          '---',
+          { opcode: 'setDebugMode', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] debug mode [ON]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, ON: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: false } } },
+          { opcode: 'inspectWidget', blockType: Scratch.BlockType.COMMAND, text: 'inspect widget [WIDGET_ID] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'setWidgetSandbox', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] sandbox [MODE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, MODE: { type: Scratch.ArgumentType.STRING, menu: 'SANDBOX_MENU' } } },
+          '---',
+          { opcode: 'whenWidgetClicked', blockType: Scratch.BlockType.HAT, text: 'when widget [WIDGET_ID] clicked on dashboard [DASH_ID]', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'whenWidgetHovered', blockType: Scratch.BlockType.HAT, text: 'when widget [WIDGET_ID] hovered on dashboard [DASH_ID]', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'whenWidgetChanged', blockType: Scratch.BlockType.HAT, text: 'when widget [WIDGET_ID] value changed on dashboard [DASH_ID]', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'whenWidgetDragged', blockType: Scratch.BlockType.HAT, text: 'when widget [WIDGET_ID] dragged on dashboard [DASH_ID]', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'whenWidgetResized', blockType: Scratch.BlockType.HAT, text: 'when widget [WIDGET_ID] resized on dashboard [DASH_ID]', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' } } },
+          { opcode: 'whenDashboardPageChanged', blockType: Scratch.BlockType.HAT, text: 'when dashboard [DASH_ID] page changed', isEdgeActivated: false, arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' } } }
         ],
         menus: {
-          ACTION_MENU: {
-            acceptReporters: true,
-            items: ['show', 'hide', 'maximize', 'minimize', 'restore', 'destroy']
-          },
-          WIDGET_TYPES: {
-            acceptReporters: true,
-            items: ['text', 'progress bar', 'ring chart', 'status light', 'image', 'stage', 'audio', 'iframe', 'html', 'log']
-          },
-          SIZE_MENU: {
-            acceptReporters: true,
-            items: ['1x1', '2x1 (wide)', '1x2 (tall)', '2x2 (large)', 'full width']
-          },
-          SHAPE_MENU: {
-            acceptReporters: true,
-            items: ['rounded', 'sharp', 'circle', 'pill']
-          }
+          WIDGET_MENU: { acceptReporters: true, items: WIDGET_TYPES },
+          TEMPLATE_MENU: { acceptReporters: true, items: Object.keys(TEMPLATES) },
+          LAYOUT_MENU: { acceptReporters: true, items: ['grid', 'freeform', 'dock', 'tabs', 'pages'] },
+          THEME_MENU: { acceptReporters: true, items: ['dark', 'light', 'glass', 'high-contrast', 'custom'] },
+          WINDOW_MODE_MENU: { acceptReporters: true, items: ['windowed', 'snapped-left', 'snapped-right', 'snapped-top', 'snapped-bottom', 'fullscreen', 'modal'] },
+          SHAPE_MENU: { acceptReporters: true, items: ['rounded', 'sharp', 'circle', 'pill'] },
+          BIND_DIR_MENU: { acceptReporters: true, items: ['input', 'output', 'both'] },
+          SANDBOX_MENU: { acceptReporters: true, items: ['safe', 'restricted', 'unsafe'] }
         }
       };
     }
 
-    _injectGlobalStyles() {
-      if (document.getElementById('dashey-global-styles')) return;
+    _injectStyles() {
+      if (document.getElementById('dashey-style')) return;
       const style = document.createElement('style');
-      style.id = 'dashey-global-styles';
+      style.id = 'dashey-style';
       style.textContent = `
-        @keyframes tw-dash-pop { 0% { opacity: 0; transform: scale(0.97) translateY(5px); } 100% { opacity: 1; transform: scale(1) translateY(0); } }
-        .tw-dash-scroll::-webkit-scrollbar { width: 8px; }
-        .tw-dash-scroll::-webkit-scrollbar-track { background: transparent; }
-        .tw-dash-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
-        .tw-dash-scroll::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
-        .dashey-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-          grid-auto-flow: dense;
-          gap: 16px;
-        }
-        .widget-card {
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.08);
-          border-radius: 12px;
-          padding: 14px;
-          display: flex;
-          flex-direction: column;
-          box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-          transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
-          cursor: pointer;
-          overflow: hidden;
-          position: relative;
-        }
-        .widget-card:hover {
-          background: rgba(255, 255, 255, 0.08);
-          transform: translateY(-2px);
-          box-shadow: 0 6px 16px rgba(0,0,0,0.3);
-        }
-        .widget-card:active { transform: translateY(0); }
-        
-        .dash-label {
-          font-size: 11px; color: #8b949e; text-transform: uppercase;
-          font-weight: 700; letter-spacing: 0.8px; margin-bottom: 8px;
-          z-index: 2; pointer-events: none; text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-        }
-        
-        .dash-content-container { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; z-index: 1; }
-        .widget-card.center-content .dash-content-container { align-items: center; }
-        
-        /* Specific Widget Styles */
-        .dash-text-value { font-size: 22px; font-weight: 700; color: var(--dashey-accent); word-break: break-word; }
-        .dash-log-pre { margin: 0; font-family: monospace; font-size: 11px; color: #a1a8b5; overflow-y: auto; max-height: 100%; white-space: pre-wrap; word-break: break-all; }
-        
-        .dash-bar-container { width: 100%; }
-        .dash-bar-bg { width: 100%; height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; margin-bottom: 4px; }
-        .dash-bar-fill { height: 100%; background: var(--dashey-accent); border-radius: 4px; transition: width 0.3s ease; }
-        .dash-bar-footer { text-align: right; font-size: 11px; font-weight: 600; color: #fff; }
-
-        .dash-ring-container { position: relative; width: 60px; height: 60px; margin: 0 auto; }
-        .dash-ring-svg { transform: rotate(-90deg); overflow: visible; }
-        .dash-ring-circle-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 6; }
-        .dash-ring-circle-fill { fill: none; stroke: var(--dashey-accent); stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.3s ease; }
-        .dash-ring-text { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; }
-        
-        .dash-status-light { width: 24px; height: 24px; border-radius: 50%; box-shadow: 0 0 10px currentColor; margin: 0 auto; transition: color 0.3s; }
-        
-        .dash-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 4px; }
-        .dash-iframe { width: 100%; height: 100%; border: none; border-radius: 4px; background: #fff; }
-        .dash-stage-canvas { width: 100%; height: 100%; object-fit: contain; border-radius: 4px; background: #000; }
-        .dash-audio { width: 100%; height: 30px; }
+        @keyframes dp-pop { from { opacity: 0; transform: scale(0.98) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+        .dp-host { all: initial; position: fixed; inset: 0; z-index: 500; pointer-events: none; }
+        .dp-window { position: fixed; display: none; flex-direction: column; overflow: hidden; border-radius: 12px; color: var(--dp-fg); font-family: var(--dp-font); box-shadow: var(--dp-shadow); background: var(--dp-bg); border: 1px solid var(--dp-border); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); pointer-events: auto; }
+        .dp-header { user-select: none; -webkit-user-select: none; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: rgba(0,0,0,0.28); border-bottom: 1px solid rgba(255,255,255,0.06); position: relative; min-height: 38px; }
+        .dp-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
+        .dp-body { flex: 1; overflow: auto; padding: 12px; }
+        .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-content: start; }
+        .dp-card { background: var(--dp-surface); border: 1px solid var(--dp-border); border-radius: var(--dp-radius); padding: 12px; overflow: hidden; position: relative; min-height: 48px; box-sizing: border-box; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: transform 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s; }
+        .dp-card:hover { background: var(--dp-surface-2); }
+        .dp-card.dp-debug { outline: 2px dashed rgba(0,210,255,0.85); outline-offset: -2px; }
+        .dp-label { font-size: 11px; color: rgba(255,255,255,0.68); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 700; }
+        .dp-center { display: flex; align-items: center; justify-content: center; }
+        .dp-text { font-size: 20px; font-weight: 700; word-break: break-word; }
+        .dp-log { margin: 0; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 100%; }
+        .dp-input, .dp-select, .dp-textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.18); color: inherit; border-radius: 10px; padding: 10px 12px; outline: none; }
+        .dp-button { width: 100%; border: 0; border-radius: 12px; background: var(--dp-accent); color: #fff; padding: 10px 12px; font-weight: 800; cursor: pointer; }
+        .dp-toggle-wrap { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; }
+        .dp-toggle { width: 42px; height: 24px; border-radius: 999px; background: rgba(255,255,255,0.16); position: relative; transition: background 0.2s; }
+        .dp-toggle-on { background: var(--dp-accent); }
+        .dp-toggle-thumb { width: 18px; height: 18px; border-radius: 50%; background: white; position: absolute; top: 3px; left: 3px; transition: transform 0.2s; }
+        .dp-toggle-on .dp-toggle-thumb { transform: translateX(18px); }
+        .dp-slider { width: 100%; }
+        .dp-ring { position: relative; width: 64px; height: 64px; margin: 0 auto; }
+        .dp-ring svg { transform: rotate(-90deg); overflow: visible; }
+        .dp-ring-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; }
+        .dp-status { width: 24px; height: 24px; border-radius: 50%; margin: 0 auto; box-shadow: 0 0 10px currentColor; }
+        .dp-iframe, .dp-img, .dp-stage-canvas { width: 100%; height: 100%; border: 0; border-radius: 8px; background: rgba(0,0,0,0.2); }
+        .dp-stage-canvas { object-fit: contain; background: #000; }
+        .dp-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        .dp-table th, .dp-table td { border-bottom: 1px solid rgba(255,255,255,0.08); padding: 6px 8px; text-align: left; }
+        .dp-table th { cursor: pointer; position: sticky; top: 0; background: rgba(0,0,0,0.22); }
+        .dp-terminal { background: #0b0d11; color: #d7e0ea; border-radius: 8px; padding: 8px; height: 100%; display: flex; flex-direction: column; }
+        .dp-terminal-output { flex: 1; overflow: auto; font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .dp-terminal-input { width: 100%; border: 0; outline: none; background: transparent; color: inherit; font-family: monospace; font-size: 12px; margin-top: 6px; }
+        .dp-minimap { width: 100%; height: 100%; background: rgba(0,0,0,0.15); border-radius: 8px; }
+        .dp-resize { position: absolute; width: 18px; height: 18px; touch-action: none; right: 0; bottom: 0; cursor: nwse-resize; background: transparent; }
+        .dp-resize::after { content: ''; position: absolute; right: 2px; bottom: 2px; width: 7px; height: 7px; border-right: 2px solid rgba(255,255,255,0.7); border-bottom: 2px solid rgba(255,255,255,0.7); }
+        .dp-inspector { font-family: monospace; font-size: 12px; white-space: pre-wrap; }
       `;
       document.head.appendChild(style);
     }
 
-    // --- DASHBOARD CORE ---
-
-    _getDash(id, autoCreateTitle = null) {
-      if (!this.dashboards[id] && autoCreateTitle !== null) {
-        this.createDash({ DASH_ID: id, TITLE: autoCreateTitle });
-      }
-      return this.dashboards[id];
+    _makeDashboard(id, title) {
+      return {
+        id, title,
+        widgets: Object.create(null), bindings: [], links: [], variables: Object.create(null),
+        pages: [{ id: 'page1', title: 'Page 1', widgets: [] }], activePage: 'page1',
+        layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false },
+        theme: clone(DEFAULT_THEME),
+        window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', pinned: false, alwaysOnTop: false },
+        security: { defaultMode: 'safe' },
+        state: { minimized: false, maximized: false, prevWindow: null, debug: false, modal: false },
+        host: null, shadow: null, container: null, header: null, body: null, grid: null, dirty: false
+      };
     }
 
-    createDash(args) {
-      const id = String(args.DASH_ID);
-      const title = String(args.TITLE);
-      if (this.dashboards[id]) {
-        this.dashboards[id].titleSpan.innerText = title;
-        return;
-      }
+    _applyTheme(dash) {
+      if (!dash?.container) return;
+      const vars = dash.theme?.vars || DEFAULT_THEME.vars;
+      for (const k in vars) dash.container.style.setProperty(k, vars[k]);
+      dash.container.style.background = 'var(--dp-bg)';
+      dash.container.style.color = 'var(--dp-fg)';
+      dash.container.style.fontFamily = 'var(--dp-font)';
+    }
 
-      const dash = {
-        id: id,
-        widgets: Object.create(null),
-        config: {
-          width: '600px', height: '400px',
-          opacity: '0.90', accentColor: '#00d2ff',
-          background: '#14161a', foreground: '#ffffff'
-        },
-        state: { isMinimized: false, isMaximized: false, savedStyles: {} }
+    _getDash(id, autoTitle = null) {
+      const k = String(id);
+      if (!this.dashboards[k] && autoTitle !== null) this.createDashboard({ DASH_ID: k, TITLE: autoTitle });
+      return this.dashboards[k];
+    }
+
+    _serializeWidget(w) {
+      return { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position };
+    }
+
+    _serializeDashboard(dash) {
+      return {
+        id: dash.id, title: dash.title, window: clone(dash.window), layout: clone(dash.layout), theme: clone(dash.theme), variables: clone(dash.variables),
+        bindings: clone(dash.bindings), links: clone(dash.links), pages: clone(dash.pages), activePage: dash.activePage, security: clone(dash.security),
+        widgets: Object.values(dash.widgets).map(w => this._serializeWidget(w))
       };
+    }
 
-      // Create Host
+    _deserializeDashboard(obj) {
+      const dash = this._makeDashboard(obj.id, obj.title || obj.id);
+      dash.window = Object.assign(dash.window, obj.window || {});
+      dash.layout = Object.assign(dash.layout, obj.layout || {});
+      dash.theme = obj.theme || clone(DEFAULT_THEME);
+      dash.variables = obj.variables || Object.create(null);
+      dash.bindings = obj.bindings || [];
+      dash.links = obj.links || [];
+      dash.pages = obj.pages || [{ id: 'page1', title: 'Page 1', widgets: [] }];
+      dash.activePage = obj.activePage || 'page1';
+      dash.security = obj.security || dash.security;
+      for (const w of (obj.widgets || [])) {
+        dash.widgets[w.id] = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, dom: {}, card: null, content: null, resizeHandle: null };
+      }
+      return dash;
+    }
+
+    _savePersisted() {
+      const bundle = { schemaVersion: '2.0.0', updatedAt: Date.now(), dashboards: {}, themes: clone(this.themes) };
+      for (const id in this.dashboards) bundle.dashboards[id] = this._serializeDashboard(this.dashboards[id]);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(bundle)); } catch (e) { console.warn('[Dashey] save failed', e); }
+    }
+
+    _loadPersisted() {
+      let bundle = jparse(localStorage.getItem(STORAGE_KEY), null);
+      if (!bundle) {
+        for (const key of LEGACY_STORAGE_KEYS) {
+          bundle = jparse(localStorage.getItem(key), null);
+          if (bundle) break;
+        }
+      }
+      if (!bundle) return;
+      this.themes = Object.assign({ dark: clone(DEFAULT_THEME) }, bundle.themes || {});
+      for (const id in bundle.dashboards || {}) {
+        const dash = this._deserializeDashboard(bundle.dashboards[id]);
+        this.dashboards[id] = dash;
+        this._hydrateDashboardDom(dash);
+      }
+    }
+
+
+    _bringToFront(dash) {
+      if (!dash?.host) return;
+      this.globalZ = Math.max(this.globalZ + 1, Number(dash.window?.zIndex || 0) + 1);
+      dash.window.zIndex = this.globalZ;
+      dash.host.style.zIndex = String(dash.window.zIndex);
+    }
+
+    _syncWindowStyles(dash) {
+      if (!dash?.container) return;
+      const mode = dash.window.mode || 'windowed';
+      dash.host.style.zIndex = String(dash.window.zIndex || this.globalZ);
+      dash.container.style.borderRadius = mode === 'windowed' || mode === 'modal' ? '12px' : '0px';
+      if (mode === 'fullscreen') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '100vh' });
+      } else if (mode === 'snapped-left') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '50vw', height: '100vh' });
+      } else if (mode === 'snapped-right') {
+        Object.assign(dash.container.style, { left: '50vw', top: '0px', width: '50vw', height: '100vh' });
+      } else if (mode === 'snapped-top') {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '50vh' });
+      } else if (mode === 'snapped-bottom') {
+        Object.assign(dash.container.style, { left: '0px', top: '50vh', width: '100vw', height: '50vh' });
+      } else {
+        const width = clamp(num(dash.window.width, 700), 260, Math.max(260, window.innerWidth));
+        const height = clamp(num(dash.window.height, 480), 180, Math.max(180, window.innerHeight));
+        dash.window.width = width;
+        dash.window.height = height;
+        dash.window.x = clamp(num(dash.window.x, 80), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(num(dash.window.y, 80), 0, Math.max(0, window.innerHeight - 40));
+        Object.assign(dash.container.style, {
+          left: `${dash.window.x}px`, top: `${dash.window.y}px`, width: `${width}px`, height: `${height}px`
+        });
+      }
+    }
+
+    _hydrateDashboardDom(dash) {
+      this._createHostAndWindow(dash);
+      for (const wid in dash.widgets) {
+        const w = dash.widgets[wid];
+        if (!w.card) this._createWidgetDom(dash, w, w.title, w.value);
+      }
+      this._renderDashboardFromModel(dash);
+      this._syncWindowStyles(dash);
+    }
+
+    _record(change) {
+      if (!change) return;
+      this.undoStack.push(change);
+      if (this.undoStack.length > MAX_HISTORY) this.undoStack.shift();
+      this.redoStack.length = 0;
+    }
+
+    _createHostAndWindow(dash) {
+      if (dash.host) return;
       dash.host = document.createElement('div');
-      dash.host.id = `tw-dashey-host-${id}`;
-      Object.assign(dash.host.style, { all: 'initial', position: 'fixed', zIndex: this.globalZIndex++ });
+      dash.host.className = 'dp-host';
+      dash.host.id = `dp-host-${dash.id}`;
+      dash.host.style.zIndex = dash.window.zIndex;
       document.body.appendChild(dash.host);
-
       dash.shadow = dash.host.attachShadow({ mode: 'open' });
-
-      // Shadow Styles
-      const shadowStyle = document.createElement('style');
-      shadowStyle.textContent = `@import url("data:text/css;base64,"); :host { all: initial; }`; // Clear scope
-      dash.shadow.appendChild(shadowStyle);
-
-      // Copy global styles into shadow DOM
-      const globalStyles = document.getElementById('dashey-global-styles');
-      if (globalStyles) {
-        const shadowStyleCopy = document.createElement('style');
-        shadowStyleCopy.textContent = globalStyles.textContent;
-        dash.shadow.appendChild(shadowStyleCopy);
-      }
-
-      // Container
-      dash.container = document.createElement('div');
-      dash.container.className = 'tw-dashey-container';
-      Object.assign(dash.container.style, {
-        position: 'fixed', top: `${10 + (Object.keys(this.dashboards).length * 2)}%`, left: `${10 + (Object.keys(this.dashboards).length * 2)}%`,
-        width: dash.config.width, height: dash.config.height,
-        backgroundColor: `rgba(20, 22, 26, ${dash.config.opacity})`,
-        backdropFilter: 'blur(15px)', WebkitBackdropFilter: 'blur(15px)',
-        color: dash.config.foreground, fontFamily: "'Inter', 'Segoe UI', sans-serif",
-        display: 'none', flexDirection: 'column',
-        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1)',
-        borderRadius: '12px', overflow: 'hidden',
-        transition: 'width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.3s, top 0.3s, left 0.3s'
-      });
-      dash.container.style.setProperty('--dashey-accent', dash.config.accentColor);
-
-      // Focus Management (Bring to front)
-      dash.container.addEventListener('mousedown', () => {
-        dash.host.style.zIndex = this.globalZIndex++;
-      });
-
-      // Header
-      dash.header = document.createElement('div');
-      Object.assign(dash.header.style, {
-        backgroundColor: 'rgba(0, 0, 0, 0.3)', padding: '10px 14px', fontSize: '13px',
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        userSelect: 'none', cursor: 'grab', borderBottom: '1px solid rgba(255, 255, 255, 0.05)'
-      });
-
-      const controlsDiv = document.createElement('div');
-      Object.assign(controlsDiv.style, { display: 'flex', gap: '8px' });
-      const createBtn = (c, hc, action) => {
-        const d = document.createElement('div');
-        Object.assign(d.style, { width: '12px', height: '12px', borderRadius: '50%', background: c, cursor: 'pointer', transition: '0.2s' });
-        d.onmouseenter = () => { d.style.background = hc; d.style.transform = 'scale(1.15)'; };
-        d.onmouseleave = () => { d.style.background = c; d.style.transform = 'scale(1)'; };
-        d.onclick = action;
-        return d;
-      };
-      controlsDiv.appendChild(createBtn('#ff5f56', '#ff7a73', () => this.doAction({ ACTION: 'hide', DASH_ID: id })));
-      controlsDiv.appendChild(createBtn('#ffbd2e', '#ffcf5c', () => this.doAction({ ACTION: 'minimize', DASH_ID: id })));
-      controlsDiv.appendChild(createBtn('#27c93f', '#4ddb63', () => this.doAction({ ACTION: 'maximize', DASH_ID: id })));
-
-      dash.titleSpan = document.createElement('span');
-      dash.titleSpan.innerText = title;
-      Object.assign(dash.titleSpan.style, { fontWeight: '600', color: '#e6edf3', position: 'absolute', left: '50%', transform: 'translateX(-50%)' });
-
-      dash.header.appendChild(controlsDiv);
-      dash.header.appendChild(dash.titleSpan);
-      dash.header.appendChild(document.createElement('div')); // spacer
-      dash.container.appendChild(dash.header);
-
-      this._makeDraggable(dash);
-
-      // Grid Area
-      dash.scrollArea = document.createElement('div');
-      dash.scrollArea.className = 'tw-dash-scroll';
-      Object.assign(dash.scrollArea.style, { flexGrow: '1', overflowY: 'auto', overflowX: 'hidden', padding: '16px', transition: 'opacity 0.2s' });
-      
-      dash.grid = document.createElement('div');
-      dash.grid.className = 'dashey-grid';
-      dash.scrollArea.appendChild(dash.grid);
-      dash.container.appendChild(dash.scrollArea);
-
-      dash.shadow.appendChild(dash.container);
-      this.dashboards[id] = dash;
+      const shim = document.createElement('style'); shim.textContent = ':host{all:initial}'; dash.shadow.appendChild(shim);
+      const root = document.createElement('div');
+      root.className = 'dp-window';
+      dash.container = root; dash.shadow.appendChild(root);
+      this._applyTheme(dash);
+      this._buildChrome(dash);
+      this._buildBody(dash);
+      this._installDragging(dash);
+      this._installResizing(dash);
+      this._syncWindowStyles(dash);
     }
 
-    _makeDraggable(dash) {
-      dash.drag = { isDragging: false, startX: 0, startY: 0, initialLeft: 0, initialTop: 0 };
-      
-      const onDown = e => {
-        if (dash.state.isMaximized || (e.target !== dash.header && e.target !== dash.titleSpan)) return;
-        dash.drag.isDragging = true;
-        dash.drag.startX = e.clientX; dash.drag.startY = e.clientY;
-        dash.container.style.transition = 'none';
-        const rect = dash.container.getBoundingClientRect();
-        dash.drag.initialLeft = rect.left; dash.drag.initialTop = rect.top;
+    _buildChrome(dash) {
+      const header = document.createElement('div'); header.className = 'dp-header';
+      const controls = document.createElement('div'); controls.className = 'dp-no-drag'; controls.style.display = 'flex'; controls.style.gap = '8px';
+      const dot = (c, h, fn) => { const d = document.createElement('div'); d.className = 'dp-no-drag'; d.style.cssText = `width:12px;height:12px;border-radius:50%;background:${c};cursor:pointer;transition:transform .2s,background .2s`; d.onmouseenter = () => { d.style.background = h; d.style.transform = 'scale(1.15)'; }; d.onmouseleave = () => { d.style.background = c; d.style.transform = 'scale(1)'; }; d.onclick = fn; return d; };
+      controls.append(dot('#ff5f56', '#ff7a73', () => this.hideDashboard({ DASH_ID: dash.id })), dot('#ffbd2e', '#ffcf5c', () => this.setWindowMode({ DASH_ID: dash.id, MODE: 'windowed' })), dot('#27c93f', '#4ddb63', () => this.setWindowMode({ DASH_ID: dash.id, MODE: 'fullscreen' })));
+      const title = document.createElement('span'); title.className = 'dp-title'; title.textContent = dash.title;
+      header.appendChild(controls); header.appendChild(title); header.appendChild(document.createElement('div'));
+      dash.header = header;
+      dash.container.appendChild(header);
+    }
+
+    _buildBody(dash) {
+      const body = document.createElement('div'); body.className = 'dp-body';
+      const grid = document.createElement('div'); grid.className = 'dp-grid';
+      body.appendChild(grid);
+      dash.body = body; dash.grid = grid;
+      dash.container.appendChild(body);
+      dash.container.addEventListener('pointerdown', () => this._bringToFront(dash));
+    }
+
+    _installDragging(dash) {
+      const state = { dragging: false, pointerId: null, sx: 0, sy: 0, x: 0, y: 0 };
+      const isControl = e => e.composedPath().some(el => el?.classList?.contains('dp-no-drag') || ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el?.tagName));
+      const down = e => {
+        if (e.button !== undefined && e.button !== 0) return;
+        if (dash.window.mode !== 'windowed' && dash.window.mode !== 'modal') return;
+        if (isControl(e)) return;
+        this._bringToFront(dash);
+        state.dragging = true;
+        state.pointerId = e.pointerId;
+        state.sx = e.clientX;
+        state.sy = e.clientY;
+        state.x = num(dash.window.x, dash.container.getBoundingClientRect().left);
+        state.y = num(dash.window.y, dash.container.getBoundingClientRect().top);
         dash.header.style.cursor = 'grabbing';
+        dash.container.style.transition = 'none';
+        try { dash.header.setPointerCapture(e.pointerId); } catch {}
+        e.preventDefault();
       };
-      
-      const onMove = e => {
-        if (!dash.drag.isDragging) return;
-        dash.container.style.left = `${dash.drag.initialLeft + (e.clientX - dash.drag.startX)}px`;
-        dash.container.style.top = `${dash.drag.initialTop + (e.clientY - dash.drag.startY)}px`;
+      const move = e => {
+        if (!state.dragging || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        const width = num(dash.window.width, dash.container.getBoundingClientRect().width);
+        const height = num(dash.window.height, dash.container.getBoundingClientRect().height);
+        dash.window.x = clamp(state.x + (e.clientX - state.sx), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(state.y + (e.clientY - state.sy), 0, Math.max(0, window.innerHeight - 40));
+        dash.container.style.left = `${dash.window.x}px`;
+        dash.container.style.top = `${dash.window.y}px`;
+        this._emit('dashboard.moved', dash, { x: dash.window.x, y: dash.window.y });
       };
-      
-      const onUp = () => {
-        if (!dash.drag.isDragging) return;
-        dash.drag.isDragging = false;
+      const up = e => {
+        if (!state.dragging || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        state.dragging = false;
+        state.pointerId = null;
         dash.header.style.cursor = 'grab';
-        dash.container.style.transition = 'width 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), height 0.3s, top 0.3s, left 0.3s';
+        dash.container.style.transition = '';
+        this._savePersisted();
+        try { dash.header.releasePointerCapture(e.pointerId); } catch {}
       };
-
-      dash.header.addEventListener('mousedown', onDown);
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', onUp);
+      dash.header.addEventListener('pointerdown', down);
+      dash.header.addEventListener('pointermove', move);
+      dash.header.addEventListener('pointerup', up);
+      dash.header.addEventListener('pointercancel', up);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
       dash.cleanupDrag = () => {
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup', onUp);
+        dash.header.removeEventListener('pointerdown', down);
+        dash.header.removeEventListener('pointermove', move);
+        dash.header.removeEventListener('pointerup', up);
+        dash.header.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
       };
     }
 
-    doAction(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const act = String(args.ACTION).toLowerCase();
+    _installResizing(dash) {
+      const h = document.createElement('div'); h.className = 'dp-resize dp-no-drag'; dash.container.appendChild(h);
+      const state = { resizing: false, pointerId: null, sx: 0, sy: 0, w: 0, h: 0 };
+      const down = e => {
+        if (dash.window.mode !== 'windowed' && dash.window.mode !== 'modal') return;
+        state.resizing = true;
+        state.pointerId = e.pointerId;
+        state.sx = e.clientX;
+        state.sy = e.clientY;
+        const r = dash.container.getBoundingClientRect();
+        state.w = r.width;
+        state.h = r.height;
+        this._bringToFront(dash);
+        try { h.setPointerCapture(e.pointerId); } catch {}
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      const move = e => {
+        if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        const w = clamp(state.w + (e.clientX - state.sx), 260, window.innerWidth);
+        const ht = clamp(state.h + (e.clientY - state.sy), 180, window.innerHeight);
+        dash.window.width = w;
+        dash.window.height = ht;
+        dash.container.style.width = `${w}px`;
+        dash.container.style.height = `${ht}px`;
+      };
+      const up = e => {
+        if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
+        state.resizing = false;
+        state.pointerId = null;
+        this._savePersisted();
+        try { h.releasePointerCapture(e.pointerId); } catch {}
+      };
+      h.addEventListener('pointerdown', down);
+      h.addEventListener('pointermove', move);
+      h.addEventListener('pointerup', up);
+      h.addEventListener('pointercancel', up);
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+      dash.cleanupResize = () => {
+        h.removeEventListener('pointerdown', down);
+        h.removeEventListener('pointermove', move);
+        h.removeEventListener('pointerup', up);
+        h.removeEventListener('pointercancel', up);
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+    }
 
-      if (act === 'show') {
-        dash.container.style.display = 'flex';
-        dash.container.style.animation = 'tw-dash-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards';
-        dash.host.style.zIndex = this.globalZIndex++;
-      } else if (act === 'hide') {
-        dash.container.style.display = 'none';
-      } else if (act === 'minimize') {
-        if (dash.state.isMaximized) return;
-        dash.state.isMinimized = !dash.state.isMinimized;
-        if (dash.state.isMinimized) {
-          dash.scrollArea.style.opacity = '0';
-          setTimeout(() => dash.scrollArea.style.display = 'none', 200);
-          dash.container.style.height = dash.header.offsetHeight + 'px';
-        } else {
-          dash.scrollArea.style.display = 'block';
-          setTimeout(() => { dash.scrollArea.style.opacity = '1'; dash.container.style.height = dash.config.height; }, 10);
+    _buildCard(widget, title) {
+      const card = document.createElement('div'); card.className = 'dp-card'; card.dataset.widgetId = widget.id;
+      const label = document.createElement('div'); label.className = 'dp-label'; label.textContent = title || '';
+      const content = document.createElement('div'); content.style.width = '100%'; content.style.height = 'calc(100% - 20px)';
+      const resize = document.createElement('div'); resize.className = 'dp-resize';
+      card.append(label, content, resize);
+      return { card, label, content, resize };
+    }
+
+    _wireWidget(dash, widget) {
+      widget.card.addEventListener('mouseenter', () => this._emit('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
+      widget.card.addEventListener('click', () => this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
+      if (widget.resizeHandle) {
+        const s = { d: false, sx: 0, sy: 0, w: 0, h: 0 };
+        widget.resizeHandle.addEventListener('mousedown', e => { s.d = true; s.sx = e.clientX; s.sy = e.clientY; const r = widget.card.getBoundingClientRect(); s.w = r.width; s.h = r.height; this._emit('widget.resizestarted', dash, { widgetId: widget.id, value: widget.value }); e.preventDefault(); e.stopPropagation(); });
+        const move = e => { if (!s.d) return; const w = clamp(s.w + (e.clientX - s.sx), 120, 2000); const h = clamp(s.h + (e.clientY - s.sy), 64, 1400); if (widget.position?.mode === 'freeform') { widget.card.style.width = `${w}px`; widget.card.style.height = `${h}px`; widget.position.w = w; widget.position.h = h; } else { const gw = clamp(Math.round(w / 120), 1, 48); const gh = clamp(Math.round(h / 90), 1, 48); widget.card.style.gridColumn = `span ${gw}`; widget.card.style.gridRow = `span ${gh}`; widget.position.w = gw; widget.position.h = gh; } this._emit('widget.resized', dash, { widgetId: widget.id, value: widget.value, width: w, height: h }); };
+        const up = () => { s.d = false; };
+        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+        widget._cleanupResize = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+      }
+    }
+
+    _createWidgetDom(dash, widget, title, rawValue) {
+      const t = widget.type;
+      const built = this._buildCard(widget, title);
+      widget.card = built.card; widget.content = built.content; widget.label = built.label; widget.resizeHandle = built.resize;
+      const c = widget.content;
+      const data = rawValue;
+      const center = () => c.classList.add('dp-center');
+      if (t === 'text') {
+        center(); const el = document.createElement('div'); el.className = 'dp-text'; el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.text = el;
+      } else if (t === 'progress.bar') {
+        c.innerHTML = `<div><div style="width:100%;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden"><div class="dp-bar-fill" style="height:100%;width:0;background:var(--dp-accent);border-radius:999px"></div></div><div class="dp-bar-txt" style="text-align:right;margin-top:5px;font-size:12px;font-weight:700"></div></div>`; widget.dom.fill = c.querySelector('.dp-bar-fill'); widget.dom.text = c.querySelector('.dp-bar-txt');
+      } else if (t === 'ring.chart') {
+        center(); const r = 26, circ = 2 * Math.PI * r; c.innerHTML = `<div class="dp-ring"><svg width="64" height="64" viewBox="0 0 60 60"><circle cx="30" cy="30" r="${r}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="6"></circle><circle class="dp-ring-fill" cx="30" cy="30" r="${r}" fill="none" stroke="var(--dp-accent)" stroke-linecap="round" stroke-width="6" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"></circle></svg><div class="dp-ring-text">0%</div></div>`; widget.dom.ring = c.querySelector('.dp-ring-fill'); widget.dom.text = c.querySelector('.dp-ring-text');
+      } else if (t === 'status.light') {
+        center(); const el = document.createElement('div'); el.className = 'dp-status'; el.style.color = String(data || '#00d2ff'); el.style.background = String(data || '#00d2ff'); c.appendChild(el); widget.dom.light = el;
+      } else if (t === 'image') {
+        const img = document.createElement('img'); img.className = 'dp-img'; img.src = String(data || ''); c.appendChild(img); widget.dom.img = img;
+      } else if (t === 'iframe') {
+        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups'); fr.src = String(data || 'about:blank'); c.appendChild(fr); widget.dom.iframe = fr;
+      } else if (t === 'html') {
+        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-same-origin'); fr.srcdoc = sanitizeHTML(String(data || '')); c.appendChild(fr); widget.dom.iframe = fr;
+      } else if (t === 'audio') {
+        const a = document.createElement('audio'); a.controls = true; a.className = 'dp-audio'; a.src = String(data || ''); c.appendChild(a); widget.dom.audio = a;
+      } else if (t === 'log') {
+        const pre = document.createElement('pre'); pre.className = 'dp-log'; pre.textContent = Array.isArray(data?.lines) ? data.lines.join('\n') : String(data || '') + '\n'; c.appendChild(pre); widget.dom.log = pre;
+      } else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') {
+        const cvs = document.createElement('canvas'); cvs.style.width = '100%'; cvs.style.height = '100%'; cvs.style.borderRadius = '8px'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsChartRedraw = true;
+      } else if (t === 'table.grid') {
+        const wrap = document.createElement('div'); wrap.style.height = '100%'; wrap.style.overflow = 'auto'; c.appendChild(wrap); widget.dom.tableWrap = wrap; widget._needsTableRedraw = true;
+      } else if (t === 'control.button') {
+        const btn = document.createElement('button'); btn.className = 'dp-button'; btn.textContent = data?.label || title || 'Button'; btn.onclick = () => { this._setWidgetValue(dash, widget, data?.value ?? btn.textContent, 'ui'); this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }); }; c.appendChild(btn); widget.dom.button = btn;
+      } else if (t === 'control.input') {
+        const inp = document.createElement('input'); inp.className = 'dp-input'; inp.type = data?.inputType === 'number' ? 'number' : 'text'; inp.value = String(data?.value ?? data ?? ''); inp.placeholder = data?.placeholder || ''; inp.oninput = () => this._setWidgetValue(dash, widget, inp.value, 'ui'); c.appendChild(inp); widget.dom.input = inp; widget.inputEl = inp;
+      } else if (t === 'control.toggle') {
+        const wrap = document.createElement('div'); wrap.className = 'dp-toggle-wrap'; const track = document.createElement('div'); track.className = 'dp-toggle'; const thumb = document.createElement('div'); thumb.className = 'dp-toggle-thumb'; track.appendChild(thumb); const label = document.createElement('span'); const on = !!(data?.value ?? data); if (on) track.classList.add('dp-toggle-on'); label.textContent = on ? (data?.onLabel || 'On') : (data?.offLabel || 'Off'); wrap.append(track, label); wrap.onclick = () => this._setWidgetValue(dash, widget, { ...(isObj(widget.value) ? widget.value : {}), value: !(widget.value?.value ?? widget.value) }, 'ui'); c.appendChild(wrap); widget.dom.toggle = track; widget.dom.toggleLabel = label;
+      } else if (t === 'control.slider') {
+        const input = document.createElement('input'); input.className = 'dp-slider'; input.type = 'range'; input.min = data?.min ?? 0; input.max = data?.max ?? 100; input.step = data?.step ?? 1; input.value = data?.value ?? 0; const text = document.createElement('div'); text.style.cssText = 'text-align:right;font-size:12px;font-weight:700'; text.textContent = input.value; input.oninput = () => { text.textContent = input.value; this._setWidgetValue(dash, widget, Number(input.value), 'ui'); }; c.append(input, text); widget.dom.input = input; widget.dom.text = text;
+      } else if (t === 'control.select') {
+        const sel = document.createElement('select'); sel.className = 'dp-select'; (data?.options || []).forEach(opt => { const o = document.createElement('option'); o.textContent = opt.label ?? opt.value; o.value = String(opt.value); sel.appendChild(o); }); sel.value = String(data?.value ?? (data?.options?.[0]?.value ?? '')); sel.onchange = () => this._setWidgetValue(dash, widget, sel.value, 'ui'); c.appendChild(sel); widget.dom.select = sel;
+      } else if (t === 'terminal.console') {
+        const term = document.createElement('div'); term.className = 'dp-terminal'; const out = document.createElement('div'); out.className = 'dp-terminal-output'; const inp = document.createElement('input'); inp.className = 'dp-terminal-input'; inp.placeholder = 'Type command and press Enter'; inp.onkeydown = e => { if (e.key === 'Enter') { const cmd = inp.value; inp.value = ''; out.textContent += `> ${cmd}\n`; this._setWidgetValue(dash, widget, cmd, 'ui'); } }; term.append(out, inp); c.appendChild(term); widget.dom.termOut = out; widget.dom.termIn = inp;
+      } else if (t === 'editor.code') {
+        const ta = document.createElement('textarea'); ta.className = 'dp-textarea'; ta.spellcheck = false; ta.value = String(data?.value ?? ''); ta.style.minHeight = '140px'; ta.style.fontFamily = 'monospace'; ta.oninput = () => this._setWidgetValue(dash, widget, ta.value, 'ui'); c.appendChild(ta); widget.dom.textarea = ta; widget.inputEl = ta;
+      } else if (t === 'viewer.minimap') {
+        const cvs = document.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
+      } else if (t === 'stage') {
+        const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
+      } else {
+        const el = document.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
+      }
+      this._wireWidget(dash, widget);
+      this._applyWidgetStyle(widget);
+      return widget;
+    }
+
+    _applyWidgetStyle(widget) {
+      if (!widget?.card) return;
+      const s = widget.style || {};
+      if (s.accent) widget.card.style.setProperty('--dp-accent', s.accent);
+      if (s.background) widget.card.style.background = s.background;
+      if (s.foreground) widget.card.style.color = s.foreground;
+      if (s.radius !== undefined) widget.card.style.borderRadius = `${s.radius}px`;
+      if (s.opacity !== undefined) widget.card.style.opacity = `${s.opacity}`;
+      if (s.shadow) widget.card.style.boxShadow = s.shadow;
+      if (s.border) widget.card.style.border = s.border;
+      if (s.padding !== undefined) widget.card.style.padding = `${s.padding}px`;
+    }
+
+    _setWidgetValue(dash, widget, value, source = 'code') {
+      const before = clone(widget.value);
+      widget.value = value;
+      this._updateWidgetDom(widget, value);
+      if (JSON.stringify(before) !== JSON.stringify(value)) {
+        this._emit('widget.changed', dash, { widgetId: widget.id, value, oldValue: before, source });
+        for (const b of dash.bindings) {
+          if (b.widgetId !== widget.id) continue;
+          if (b.dir === 'input') continue;
+          this._setDashboardVarInternal(dash, b.varName, value, `binding:${widget.id}`);
+          this._writeScratchVar(b.varName, value);
         }
-      } else if (act === 'maximize') {
-        if (dash.state.isMinimized) return;
-        dash.state.isMaximized = !dash.state.isMaximized;
-        if (dash.state.isMaximized) {
-          dash.state.savedStyles = { top: dash.container.style.top, left: dash.container.style.left, width: dash.container.style.width, height: dash.container.style.height, borderRadius: dash.container.style.borderRadius };
-          Object.assign(dash.container.style, { top: '0', left: '0', width: '100vw', height: '100vh', borderRadius: '0px' });
-          dash.header.style.cursor = 'default';
-        } else {
-          Object.assign(dash.container.style, dash.state.savedStyles);
-          dash.header.style.cursor = 'grab';
-        }
-      } else if (act === 'restore') {
-        if (dash.state.isMaximized) this.doAction({ ACTION: 'maximize', DASH_ID: args.DASH_ID });
-        if (dash.state.isMinimized) this.doAction({ ACTION: 'minimize', DASH_ID: args.DASH_ID });
-      } else if (act === 'destroy') {
-        if (dash.cleanupDrag) dash.cleanupDrag();
-        if (dash.host && dash.host.parentNode) dash.host.parentNode.removeChild(dash.host);
-        delete this.dashboards[args.DASH_ID];
-      }
-    }
-
-    setColors(args) {
-      const dash = this._getDash(args.DASH_ID, args.DASH_ID);
-      dash.config.background = args.BG;
-      dash.config.foreground = args.FG;
-      dash.config.accentColor = args.ACC;
-
-      let rgbaBg = args.BG;
-      if (typeof args.BG === 'string' && args.BG.startsWith('#')) {
-        const r = parseInt(args.BG.slice(1, 3), 16) || 20;
-        const g = parseInt(args.BG.slice(3, 5), 16) || 22;
-        const b = parseInt(args.BG.slice(5, 7), 16) || 26;
-        rgbaBg = `rgba(${r}, ${g}, ${b}, ${dash.config.opacity})`;
-      }
-      
-      dash.container.style.backgroundColor = rgbaBg;
-      dash.container.style.color = args.FG;
-      dash.container.style.setProperty('--dashey-accent', args.ACC);
-    }
-
-    // --- WIDGET ENGINE ---
-
-    addWidget(args) {
-      const dash = this._getDash(args.DASH_ID, args.DASH_ID);
-      const wId = String(args.WIDGET_ID);
-      const type = String(args.TYPE).toLowerCase();
-      const label = String(args.LABEL);
-      const value = String(args.VALUE);
-
-      if (dash.widgets[wId]) this.removeWidget({ DASH_ID: args.DASH_ID, WIDGET_ID: wId });
-
-      const card = document.createElement('div');
-      card.className = 'widget-card';
-      card.id = `widget-${wId}`;
-      card.onclick = () => Scratch.vm.runtime.startHats('dashey_whenWidgetClicked', { WIDGET_ID: wId, DASH_ID: dash.id });
-
-      const labelDiv = document.createElement('div');
-      labelDiv.className = 'dash-label';
-      labelDiv.innerText = label;
-      if (label) card.appendChild(labelDiv);
-
-      const content = document.createElement('div');
-      content.className = 'dash-content-container';
-      card.appendChild(content);
-
-      const widgetData = { type, card, content, domNodes: {} };
-      dash.widgets[wId] = widgetData;
-      dash.grid.appendChild(card);
-
-      this._buildWidgetContent(widgetData, value);
-    }
-
-    _buildWidgetContent(w, value) {
-      const c = w.content;
-      c.innerHTML = '';
-      w.domNodes = {};
-
-      let num = parseFloat(value) || 0;
-      if (w.type === 'progress bar' || w.type === 'ring chart') num = Math.max(0, Math.min(100, num));
-
-      if (w.type === 'text') {
-        const t = document.createElement('div');
-        t.className = 'dash-text-value';
-        t.innerText = value;
-        w.domNodes.text = t;
-        c.appendChild(t);
-      } 
-      else if (w.type === 'progress bar') {
-        c.innerHTML = `
-          <div class="dash-bar-container">
-            <div class="dash-bar-bg"><div class="dash-bar-fill" style="width: ${num}%"></div></div>
-            <div class="dash-bar-footer">${num}%</div>
-          </div>`;
-        w.domNodes.fill = c.querySelector('.dash-bar-fill');
-        w.domNodes.text = c.querySelector('.dash-bar-footer');
-      } 
-      else if (w.type === 'ring chart') {
-        w.card.classList.add('center-content');
-        const r = 26, circ = 2 * Math.PI * r, off = circ - (num / 100) * circ;
-        c.innerHTML = `
-          <div class="dash-ring-container">
-            <svg class="dash-ring-svg" width="60" height="60" viewBox="0 0 60 60">
-              <circle class="dash-ring-circle-bg" cx="30" cy="30" r="${r}"></circle>
-              <circle class="dash-ring-circle-fill" cx="30" cy="30" r="${r}" stroke-dasharray="${circ}" stroke-dashoffset="${off}"></circle>
-            </svg>
-            <div class="dash-ring-text">${num}%</div>
-          </div>`;
-        w.domNodes.ring = c.querySelector('.dash-ring-circle-fill');
-        w.domNodes.text = c.querySelector('.dash-ring-text');
-      }
-      else if (w.type === 'status light') {
-        w.card.classList.add('center-content');
-        const l = document.createElement('div');
-        l.className = 'dash-status-light';
-        l.style.color = value;
-        l.style.backgroundColor = value;
-        w.domNodes.light = l;
-        c.appendChild(l);
-      }
-      else if (w.type === 'image') {
-        const i = document.createElement('img');
-        i.className = 'dash-img';
-        i.src = value;
-        w.domNodes.img = i;
-        c.appendChild(i);
-      }
-      else if (w.type === 'iframe') {
-        const i = document.createElement('iframe');
-        i.className = 'dash-iframe';
-        i.src = value;
-        w.domNodes.iframe = i;
-        c.appendChild(i);
-      }
-      else if (w.type === 'html') {
-        const i = document.createElement('iframe');
-        i.className = 'dash-iframe';
-        i.srcdoc = value;
-        w.domNodes.iframe = i;
-        c.appendChild(i);
-      }
-      else if (w.type === 'audio') {
-        const a = document.createElement('audio');
-        a.className = 'dash-audio';
-        a.controls = true;
-        a.src = value;
-        w.domNodes.audio = a;
-        c.appendChild(a);
-      }
-      else if (w.type === 'log') {
-        const p = document.createElement('pre');
-        p.className = 'dash-log-pre';
-        p.innerText = value + '\n';
-        w.domNodes.log = p;
-        c.appendChild(p);
-      }
-      else if (w.type === 'stage') {
-        const cvs = document.createElement('canvas');
-        cvs.className = 'dash-stage-canvas';
-        w.domNodes.canvas = cvs;
-        w.domNodes.ctx = cvs.getContext('2d');
-        c.appendChild(cvs);
-      }
-    }
-
-    updateWidget(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const w = dash.widgets[args.WIDGET_ID];
-      if (!w) return;
-      const val = String(args.VALUE);
-
-      let num = parseFloat(val) || 0;
-      if (w.type === 'progress bar' || w.type === 'ring chart') num = Math.max(0, Math.min(100, num));
-
-      if (w.type === 'text') w.domNodes.text.innerText = val;
-      else if (w.type === 'progress bar') {
-        w.domNodes.fill.style.width = `${num}%`;
-        w.domNodes.text.innerText = `${num}%`;
-      }
-      else if (w.type === 'ring chart') {
-        const r = 26, circ = 2 * Math.PI * r;
-        w.domNodes.ring.style.strokeDashoffset = circ - (num / 100) * circ;
-        w.domNodes.text.innerText = `${num}%`;
-      }
-      else if (w.type === 'status light') {
-        w.domNodes.light.style.color = val;
-        w.domNodes.light.style.backgroundColor = val;
-      }
-      else if (w.type === 'image') w.domNodes.img.src = val;
-      else if (w.type === 'iframe') w.domNodes.iframe.src = val;
-      else if (w.type === 'html') w.domNodes.iframe.srcdoc = val;
-      else if (w.type === 'audio') w.domNodes.audio.src = val;
-      else if (w.type === 'log') {
-        w.domNodes.log.innerText = val + '\n';
-        w.domNodes.log.scrollTop = w.domNodes.log.scrollHeight;
-      }
-    }
-
-    appendLogWidget(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const w = dash.widgets[args.WIDGET_ID];
-      if (!w || w.type !== 'log') return;
-      w.domNodes.log.innerText += String(args.VALUE) + '\n';
-      w.domNodes.log.scrollTop = w.domNodes.log.scrollHeight;
-    }
-
-    setWidgetLayout(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const w = dash.widgets[args.WIDGET_ID];
-      if (!w) return;
-
-      const size = String(args.SIZE);
-      let col = 'span 1', row = 'span 1';
-      
-      if (size.includes('2x1')) { col = 'span 2'; row = 'span 1'; }
-      else if (size.includes('1x2')) { col = 'span 1'; row = 'span 2'; }
-      else if (size.includes('2x2')) { col = 'span 2'; row = 'span 2'; }
-      else if (size.includes('full')) { col = '1 / -1'; row = 'span 1'; }
-
-      w.card.style.gridColumn = col;
-      w.card.style.gridRow = row;
-      w.card.style.order = args.ORDER;
-    }
-
-    setWidgetShape(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const w = dash.widgets[args.WIDGET_ID];
-      if (!w) return;
-      
-      const shape = String(args.SHAPE).toLowerCase();
-      if (shape === 'sharp') w.card.style.borderRadius = '0px';
-      else if (shape === 'circle') w.card.style.borderRadius = '50%';
-      else if (shape === 'pill') w.card.style.borderRadius = '9999px';
-      else w.card.style.borderRadius = '12px'; // rounded
-    }
-
-    removeWidget(args) {
-      const dash = this._getDash(args.DASH_ID);
-      if (!dash) return;
-      const w = dash.widgets[args.WIDGET_ID];
-      if (w) {
-        if (w.card.parentNode) w.card.parentNode.removeChild(w.card);
-        delete dash.widgets[args.WIDGET_ID];
-      }
-    }
-
-    // --- RENDER LOOP FOR STAGE WIDGETS ---
-    _renderLoop() {
-      if (this._disposed) return;
-      if (Scratch && Scratch.vm && Scratch.vm.runtime && Scratch.vm.runtime.renderer) {
-        const scratchCvs = Scratch.vm.runtime.renderer.canvas;
-        if (scratchCvs) {
-          for (const dashId in this.dashboards) {
-            const dash = this.dashboards[dashId];
-            if (dash.container.style.display === 'none') continue; // Skip hidden dashes
-            for (const wId in dash.widgets) {
-              const w = dash.widgets[wId];
-              if (w.type === 'stage' && w.domNodes.canvas) {
-                const cvs = w.domNodes.canvas;
-                const ctx = w.domNodes.ctx;
-                // Match resolution to display size to avoid stretched low-res
-                if (cvs.width !== cvs.clientWidth || cvs.height !== cvs.clientHeight) {
-                  cvs.width = cvs.clientWidth;
-                  cvs.height = cvs.clientHeight;
-                }
-                if (cvs.width > 0 && cvs.height > 0) {
-                  ctx.drawImage(scratchCvs, 0, 0, cvs.width, cvs.height);
-                }
-              }
-            }
+        for (const l of dash.links) {
+          if (l.from === widget.id) {
+            const target = dash.widgets[l.to];
+            if (target && target.id !== widget.id) this._setWidgetValue(dash, target, value, `link:${source}`);
           }
         }
       }
-      this.rafId = requestAnimationFrame(this._renderLoop);
+      this._markDirty(dash);
+    }
+
+    _updateWidgetDom(widget, value) {
+      const t = widget.type; const v = value; const n = clamp(num(v, 0), 0, 100);
+      if (t === 'text' && widget.dom.text) widget.dom.text.textContent = String(v ?? '');
+      else if (t === 'progress.bar') { if (widget.dom.fill) widget.dom.fill.style.width = `${n}%`; if (widget.dom.text) widget.dom.text.textContent = `${n}%`; }
+      else if (t === 'ring.chart') { if (widget.dom.ring) { const r = 26, circ = 2 * Math.PI * r; widget.dom.ring.style.strokeDasharray = `${circ}`; widget.dom.ring.style.strokeDashoffset = `${circ - (n / 100) * circ}`; } if (widget.dom.text) widget.dom.text.textContent = `${n}%`; }
+      else if (t === 'status.light' && widget.dom.light) { const c = String(v || '#00d2ff'); widget.dom.light.style.background = c; widget.dom.light.style.color = c; }
+      else if (t === 'image' && widget.dom.img) widget.dom.img.src = String(v || '');
+      else if (t === 'iframe' && widget.dom.iframe) widget.dom.iframe.src = String(v || 'about:blank');
+      else if (t === 'html' && widget.dom.iframe) widget.dom.iframe.srcdoc = sanitizeHTML(String(v || ''));
+      else if (t === 'audio' && widget.dom.audio) widget.dom.audio.src = String(v || '');
+      else if (t === 'log' && widget.dom.log) widget.dom.log.textContent = (Array.isArray(v?.lines) ? v.lines.join('\n') : String(v ?? '')) + '\n';
+      else if (t === 'control.button' && widget.dom.button) widget.dom.button.textContent = v?.label || widget.title || 'Button';
+      else if (t === 'control.input' && widget.dom.input) widget.dom.input.value = String(v ?? '');
+      else if (t === 'control.toggle' && widget.dom.toggle) { const on = !!(v?.value ?? v); widget.dom.toggle.classList.toggle('dp-toggle-on', on); if (widget.dom.toggleLabel) widget.dom.toggleLabel.textContent = on ? (v?.onLabel || 'On') : (v?.offLabel || 'Off'); }
+      else if (t === 'control.slider' && widget.dom.input) { widget.dom.input.value = String(v ?? 0); if (widget.dom.text) widget.dom.text.textContent = String(v ?? 0); }
+      else if (t === 'control.select' && widget.dom.select) widget.dom.select.value = String(v ?? '');
+      else if (t === 'terminal.console' && widget.dom.termOut) widget.dom.termOut.textContent += `${String(v)}\n`;
+      else if (t === 'editor.code' && widget.dom.textarea) widget.dom.textarea.value = String(v ?? '');
+      else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') widget._needsChartRedraw = true;
+      else if (t === 'table.grid') widget._needsTableRedraw = true;
+      else if (t === 'viewer.minimap') widget._needsMiniRedraw = true;
+      else if (t === 'stage') widget._needsStageRedraw = true;
+    }
+
+    _setDashboardVarInternal(dash, name, value, source = 'code') {
+      const before = dash.variables[name]; dash.variables[name] = value;
+      if (JSON.stringify(before) !== JSON.stringify(value)) {
+        for (const b of dash.bindings) {
+          if (b.varName !== name) continue;
+          if (b.dir === 'output') continue;
+          const w = dash.widgets[b.widgetId];
+          if (w) this._setWidgetValue(dash, w, value, `binding:${name}`);
+        }
+        this._markDirty(dash);
+      }
+    }
+
+    _readScratchVar(name) {
+      try {
+        const rt = Scratch?.vm?.runtime;
+        const targets = [rt?.getEditingTarget?.(), rt?.getTargetForStage?.(), ...(rt?.targets || [])].filter(Boolean);
+        for (const t of targets) {
+          if (!t.variables) continue;
+          for (const id in t.variables) if (t.variables[id]?.name === name) return t.variables[id].value;
+        }
+      } catch {}
+      return '';
+    }
+
+    _writeScratchVar(name, value) {
+      try {
+        const rt = Scratch?.vm?.runtime;
+        const targets = [rt?.getEditingTarget?.(), rt?.getTargetForStage?.(), ...(rt?.targets || [])].filter(Boolean);
+        for (const t of targets) {
+          if (!t.variables) continue;
+          for (const id in t.variables) if (t.variables[id]?.name === name) { t.variables[id].value = value; return true; }
+        }
+      } catch {}
+      return false;
+    }
+
+    _readScratchList(name) {
+      try {
+        const rt = Scratch?.vm?.runtime;
+        const targets = [rt?.getEditingTarget?.(), rt?.getTargetForStage?.(), ...(rt?.targets || [])].filter(Boolean);
+        for (const t of targets) {
+          if (!t.lists) continue;
+          for (const id in t.lists) if (t.lists[id]?.name === name) return clone(t.lists[id].value || []);
+        }
+      } catch {}
+      return [];
+    }
+
+    _writeScratchList(name, arr) {
+      try {
+        const rt = Scratch?.vm?.runtime;
+        const targets = [rt?.getEditingTarget?.(), rt?.getTargetForStage?.(), ...(rt?.targets || [])].filter(Boolean);
+        for (const t of targets) {
+          if (!t.lists) continue;
+          for (const id in t.lists) if (t.lists[id]?.name === name) { t.lists[id].value = clone(arr); return true; }
+        }
+      } catch {}
+      return false;
+    }
+
+    _markDirty(dash) { if (!dash) return; dash.dirty = true; if (!this.renderQueued) { this.renderQueued = true; requestAnimationFrame(() => { this.renderQueued = false; this._flushRender(); }); } }
+    _flushRender() { for (const id in this.dashboards) { const d = this.dashboards[id]; if (!d.dirty) continue; d.dirty = false; this._refreshWidgetVisibility(d); } }
+    _refreshWidgetVisibility(dash) { const active = new Set((dash.pages.find(p => p.id === dash.activePage)?.widgets) || []); for (const id in dash.widgets) { const w = dash.widgets[id]; const visible = !dash.state.minimized && dash.container.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id)); w.card.style.display = visible ? '' : 'none'; } }
+
+    _emit(type, dash, payload = {}) {
+      const ev = { type, dashId: dash?.id || '', timestamp: Date.now(), ...clone(payload) };
+      if (type === 'widget.clicked') Scratch.vm.runtime.startHats(`${EXT_ID}_whenWidgetClicked`, { DASH_ID: ev.dashId, WIDGET_ID: ev.widgetId || '', VALUE: ev.value !== undefined ? String(ev.value) : '' });
+      if (type === 'widget.hovered') Scratch.vm.runtime.startHats(`${EXT_ID}_whenWidgetHovered`, { DASH_ID: ev.dashId, WIDGET_ID: ev.widgetId || '', VALUE: ev.value !== undefined ? String(ev.value) : '' });
+      if (type === 'widget.changed') Scratch.vm.runtime.startHats(`${EXT_ID}_whenWidgetChanged`, { DASH_ID: ev.dashId, WIDGET_ID: ev.widgetId || '', VALUE: ev.value !== undefined ? String(ev.value) : '' });
+      if (type === 'widget.dragged') Scratch.vm.runtime.startHats(`${EXT_ID}_whenWidgetDragged`, { DASH_ID: ev.dashId, WIDGET_ID: ev.widgetId || '', VALUE: ev.value !== undefined ? String(ev.value) : '' });
+      if (type === 'widget.resized') Scratch.vm.runtime.startHats(`${EXT_ID}_whenWidgetResized`, { DASH_ID: ev.dashId, WIDGET_ID: ev.widgetId || '', VALUE: ev.value !== undefined ? String(ev.value) : '' });
+      if (type === 'dashboard.pagechanged') Scratch.vm.runtime.startHats(`${EXT_ID}_whenDashboardPageChanged`, { DASH_ID: ev.dashId });
+    }
+
+    _findDashOfWidget(widgetId) { for (const id in this.dashboards) if (this.dashboards[id].widgets[widgetId]) return this.dashboards[id]; return null; }
+
+    _drawChart(widget) {
+      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
+      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      ctx.clearRect(0, 0, w, h);
+      const d = widget.value || {}; const series = Array.isArray(d.series) ? d.series : []; if (!series.length) return;
+      const pad = 20 * devicePixelRatio;
+      let min = Infinity, max = -Infinity, len = 0;
+      series.forEach(s => { const vals = Array.isArray(s.values) ? s.values : []; len = Math.max(len, vals.length); vals.forEach(x => { const n = num(x, 0); min = Math.min(min, n); max = Math.max(max, n); }); });
+      if (min === Infinity) { min = 0; max = 1; }
+      if (min === max) max = min + 1;
+      const mapX = i => pad + (len <= 1 ? (w - pad * 2) / 2 : (i / (len - 1)) * (w - pad * 2));
+      const mapY = n => pad + (1 - ((num(n, 0) - min) / (max - min))) * (h - pad * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, h - pad); ctx.lineTo(w - pad, h - pad); ctx.stroke();
+      series.forEach((s, idx) => { const vals = Array.isArray(s.values) ? s.values : []; ctx.strokeStyle = s.color || '#00d2ff'; ctx.lineWidth = 2 * devicePixelRatio; ctx.beginPath(); vals.forEach((n, i) => { const x = mapX(i), y = mapY(n); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); }); ctx.stroke(); if (widget.type === 'chart.bar') { const bw = ((w - pad * 2) / Math.max(1, vals.length)) * 0.7; vals.forEach((n, i) => { const x = mapX(i) - bw / 2; const y = mapY(n); ctx.fillRect(x, y, bw, h - pad - y); }); } });
+    }
+
+    _drawTable(widget) {
+      const wrap = widget.dom.tableWrap; if (!wrap) return; wrap.innerHTML = '';
+      const d = widget.value || {}; const cols = Array.isArray(d.columns) ? d.columns : []; const rows = Array.isArray(d.rows) ? d.rows : [];
+      const table = document.createElement('table'); table.className = 'dp-table';
+      const thead = document.createElement('thead'); const tr = document.createElement('tr');
+      cols.forEach(col => { const th = document.createElement('th'); th.textContent = col.label || col.key || ''; th.onclick = () => { rows.sort((a, b) => String(a[col.key] ?? '').localeCompare(String(b[col.key] ?? ''))); this._setWidgetValue(this._findDashOfWidget(widget.id), widget, { ...d, rows }, 'sort'); }; tr.appendChild(th); });
+      thead.appendChild(tr); table.appendChild(thead);
+      const tbody = document.createElement('tbody'); rows.forEach((row, idx) => { const tr2 = document.createElement('tr'); tr2.onclick = () => this._emit('widget.clicked', this._findDashOfWidget(widget.id), { widgetId: widget.id, value: row, rowIndex: idx }); cols.forEach(col => { const td = document.createElement('td'); td.textContent = String(row[col.key] ?? ''); tr2.appendChild(td); }); tbody.appendChild(tr2); });
+      table.appendChild(tbody); wrap.appendChild(table);
+    }
+
+    _drawMinimap(widget) {
+      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
+      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      ctx.clearRect(0, 0, w, h); ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(0, 0, w, h);
+      const d = widget.value || {}; const b = d.bounds || { x: 0, y: 0, w: 100, h: 100 }; const pts = Array.isArray(d.points) ? d.points : []; const sx = w / (b.w || 1), sy = h / (b.h || 1);
+      ctx.strokeStyle = 'rgba(255,255,255,0.24)'; ctx.strokeRect(0, 0, w, h);
+      pts.forEach(pt => { const x = (pt.x - (b.x || 0)) * sx; const y = (pt.y - (b.y || 0)) * sy; ctx.fillStyle = pt.color || '#00d2ff'; ctx.beginPath(); ctx.arc(x, y, 4 * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); });
+    }
+
+    _drawStage(widget) {
+      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return; const src = Scratch?.vm?.runtime?.renderer?.canvas; if (!src) return;
+      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      ctx.clearRect(0, 0, w, h); try { ctx.drawImage(src, 0, 0, w, h); } catch {}
+    }
+
+    _stageLoop() {
+      if (this._disposed) return;
+      for (const id in this.dashboards) {
+        const d = this.dashboards[id];
+        if (!d.container || d.container.style.display === 'none') continue;
+        for (const wid in d.widgets) {
+          const w = d.widgets[wid];
+          if (w.type === 'stage' && w.dom.canvas) this._drawStage(w);
+          if (w._needsChartRedraw && w.dom.canvas) { w._needsChartRedraw = false; this._drawChart(w); }
+          if (w._needsTableRedraw && w.dom.tableWrap) { w._needsTableRedraw = false; this._drawTable(w); }
+          if (w._needsMiniRedraw && w.dom.canvas) { w._needsMiniRedraw = false; this._drawMinimap(w); }
+        }
+      }
+      this._raf = requestAnimationFrame(this._stageLoop);
+    }
+
+    createDashboard(args) { const id = String(args.DASH_ID); const title = String(args.TITLE || id); if (this.dashboards[id]) { this.setDashboardTitle({ DASH_ID: id, TITLE: title }); this.showDashboard({ DASH_ID: id }); return; } const d = this._makeDashboard(id, title); this.dashboards[id] = d; this._createHostAndWindow(d); this._renderDashboardFromModel(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
+    createFromTemplate(args) { const tpl = TEMPLATES[String(args.TEMPLATE)] || TEMPLATES.blank; this.createDashboard({ DASH_ID: String(args.DASH_ID), TITLE: tpl.title }); const d = this._getDash(args.DASH_ID); d.layout = clone(tpl.layout); tpl.widgets.forEach(w => { this.addWidget({ DASH_ID: d.id, WIDGET_ID: w.id, TYPE: w.type, TITLE: w.title || w.id, VALUE: JSON.stringify(w.value ?? '') }); this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: w.pos?.x || 0, Y: w.pos?.y || 0, W: w.pos?.w || 3, H: w.pos?.h || 2 }); }); this._savePersisted(); }
+    _renderDashboardFromModel(d) { if (!d?.grid) return; d.grid.innerHTML = ''; for (const wid in d.widgets) { const w = d.widgets[wid]; if (w?.card) d.grid.appendChild(w.card); } this._refreshWidgetVisibility(d); }
+    showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
+    hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.container.style.display = 'none'; this._savePersisted(); }
+    destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; if (d.cleanupDrag) d.cleanupDrag(); if (d.cleanupResize) d.cleanupResize(); for (const wid in d.widgets) { const w = d.widgets[wid]; if (w._cleanupResize) w._cleanupResize(); } if (d.host?.parentNode) d.host.parentNode.removeChild(d.host); delete this.dashboards[d.id]; this._savePersisted(); }
+    setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; this._savePersisted(); }
+    setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) { if (d.layout.mode === 'freeform') { d.grid.style.position = 'relative'; d.grid.style.display = 'block'; } else { d.grid.style.position = ''; d.grid.style.display = 'grid'; d.grid.style.gridTemplateColumns = `repeat(${d.layout.columns}, minmax(0, 1fr))`; d.grid.style.gap = `${d.layout.gap}px`; } } this._markDirty(d); this._savePersisted(); }
+    setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme = clone(this.themes[String(args.THEME)] || this.themes.dark); this._applyTheme(d); this._savePersisted(); }
+    setDashboardColor(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme.vars['--dp-bg'] = String(args.BG); d.theme.vars['--dp-fg'] = String(args.FG); d.theme.vars['--dp-accent'] = String(args.ACC); this._applyTheme(d); this._savePersisted(); }
+    setDashboardWindow(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.window.mode = 'windowed'; d.window.x = num(args.X, d.window.x); d.window.y = num(args.Y, d.window.y); d.window.width = num(args.W, d.window.width); d.window.height = num(args.H, d.window.height); this._syncWindowStyles(d); this._savePersisted(); }
+    setWindowMode(args) {
+      const d = this._getDash(args.DASH_ID);
+      if (!d) return;
+      const mode = String(args.MODE || 'windowed');
+      if (mode !== 'windowed' && d.window.mode === 'windowed') d.state.prevWindow = clone(d.window);
+      if (mode === 'windowed' && d.state.prevWindow) {
+        Object.assign(d.window, d.state.prevWindow, { mode: 'windowed' });
+        d.state.prevWindow = null;
+      } else {
+        d.window.mode = mode;
+      }
+      d.state.modal = mode === 'modal';
+      d.state.minimized = mode === 'minimized';
+      d.container.style.display = mode === 'minimized' ? 'none' : 'flex';
+      this._bringToFront(d);
+      this._syncWindowStyles(d);
+      this._markDirty(d);
+      this._savePersisted();
+    }
+
+    addWidget(args) {
+      const d = this._getDash(args.DASH_ID, args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); if (d.widgets[id]) this.removeWidget({ DASH_ID: d.id, WIDGET_ID: id });
+      const t = String(args.TYPE), title = String(args.TITLE || id), raw = this._sanitizeValue(t, args.VALUE);
+      const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: 3, h: 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, dom: {}, card: null, content: null, resizeHandle: null };
+      d.widgets[id] = w; this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
+    }
+    _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
+    updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._savePersisted(); }
+    appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._savePersisted(); }
+    setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.position); w.position = w.position || {}; w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); w.position.w = num(args.W, 3); w.position.h = num(args.H, 2); w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; if (w.position.mode === 'freeform') { w.card.style.position = 'absolute'; w.card.style.left = `${w.position.x}px`; w.card.style.top = `${w.position.y}px`; w.card.style.width = `${w.position.w}px`; w.card.style.height = `${w.position.h}px`; } else { w.card.style.position = ''; w.card.style.gridColumn = `span ${clamp(w.position.w, 1, 48)}`; w.card.style.gridRow = `span ${clamp(w.position.h, 1, 48)}`; } this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position) }); this._savePersisted(); }
+    setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._savePersisted(); }
+    setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
+    setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); w.label.textContent = w.title; this._savePersisted(); }
+    setWidgetSandbox(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.sandbox = String(args.MODE); if (w.type === 'iframe' && w.dom.iframe) { if (w.sandbox === 'safe') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin'); else if (w.sandbox === 'restricted') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin allow-forms'); else w.dom.iframe.removeAttribute('sandbox'); } }
+    removeWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); const w = d.widgets[id]; if (!w) return; if (w._cleanupResize) w._cleanupResize(); if (w.card?.parentNode) w.card.parentNode.removeChild(w.card); delete d.widgets[id]; d.pages.forEach(p => p.widgets = p.widgets.filter(x => x !== id)); d.bindings = d.bindings.filter(b => b.widgetId !== id); d.links = d.links.filter(l => l.from !== id && l.to !== id); this._savePersisted(); }
+    bindWidgetToVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID), dir = String(args.DIR), name = String(args.VAR); d.bindings = d.bindings.filter(b => !(b.widgetId === id && b.varName === name)); d.bindings.push({ widgetId: id, varName: name, dir, sourceGuard: '' }); const w = d.widgets[id]; if (!w) return; if (dir === 'input' || dir === 'both') { const v = this._readScratchVar(name); if (v !== '') this._setWidgetValue(d, w, v, 'scratch'); } else { this._writeScratchVar(name, w.value); } this._savePersisted(); }
+    linkWidgets(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.links = d.links.filter(l => !(l.from === String(args.FROM) && l.to === String(args.TO))); d.links.push({ from: String(args.FROM), to: String(args.TO) }); this._savePersisted(); }
+    setDashboardVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._setDashboardVarInternal(d, String(args.NAME), args.VALUE, 'code'); this._savePersisted(); }
+    changeDashboardVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const n = String(args.NAME); this._setDashboardVarInternal(d, n, num(d.variables[n], 0) + num(args.VALUE, 0), 'code'); this._savePersisted(); }
+    getDashboardVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return ''; const v = d.variables[String(args.NAME)]; return v === undefined ? '' : v; }
+    getWidgetValue(args) { const d = this._getDash(args.DASH_ID); if (!d) return ''; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return ''; return isObj(w.value) || Array.isArray(w.value) ? JSON.stringify(w.value) : (w.value ?? ''); }
+    saveDashboard(args) { this._savePersisted(); }
+    loadDashboard(args) { const b = jparse(localStorage.getItem(STORAGE_KEY), null); if (!b?.dashboards?.[String(args.DASH_ID)]) return; const id = String(args.DASH_ID); if (this.dashboards[id]) this.destroyDashboard({ DASH_ID: id }); const d = this._deserializeDashboard(b.dashboards[id]); this.dashboards[id] = d; this._hydrateDashboardDom(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
+    exportDashboard(args) { const d = this._getDash(args.DASH_ID); return JSON.stringify({ schemaVersion: '2.0.0', dashboard: d ? this._serializeDashboard(d) : null }); }
+    importDashboard(args) { const parsed = jparse(String(args.JSON), null); if (!parsed) return; const obj = parsed.dashboard || parsed; const id = String(args.DASH_ID || obj.id || 'main'); if (this.dashboards[id]) this.destroyDashboard({ DASH_ID: id }); const d = this._deserializeDashboard({ ...obj, id }); this.dashboards[id] = d; this._hydrateDashboardDom(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
+    undo() { const c = this.undoStack.pop(); if (!c) return; this.redoStack.push(c); if (c.op === 'widget.value') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this._setWidgetValue(d, w, c.before, 'undo'); } else if (c.op === 'widget.move') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: c.before.x, Y: c.before.y, W: c.before.w, H: c.before.h }); } else if (c.op === 'dashboard.theme') { const d = this._getDash(c.dashId); if (d) { d.theme = c.before; this._applyTheme(d); } } this._savePersisted(); }
+    redo() { const c = this.redoStack.pop(); if (!c) return; this.undoStack.push(c); if (c.op === 'widget.value') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this._setWidgetValue(d, w, c.after, 'redo'); } else if (c.op === 'widget.move') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: c.after.x, Y: c.after.y, W: c.after.w, H: c.after.h }); } else if (c.op === 'dashboard.theme') { const d = this._getDash(c.dashId); if (d) { d.theme = c.after; this._applyTheme(d); } } this._savePersisted(); }
+    setDebugMode(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.debug = !!args.ON; for (const wid in d.widgets) { const w = d.widgets[wid]; w.card.classList.toggle('dp-debug', d.state.debug); } }
+    inspectWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const msg = [`id: ${w.id}`, `type: ${w.type}`, `title: ${w.title}`, `value: ${typeof w.value === 'object' ? JSON.stringify(w.value) : String(w.value)}`, `pos: ${JSON.stringify(w.position)}`, `sandbox: ${w.sandbox}`, `style: ${JSON.stringify(w.style)}`].join('\n'); alert(msg); }
+
+    whenWidgetClicked(args) { return false; }
+    whenWidgetHovered(args) { return false; }
+    whenWidgetChanged(args) { return false; }
+    whenWidgetDragged(args) { return false; }
+    whenWidgetResized(args) { return false; }
+    whenDashboardPageChanged(args) { return false; }
+
+    _sanitizeWidgetData(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
+
+    _refreshWidgetVisibility(dash) {
+      const active = new Set((dash.pages.find(p => p.id === dash.activePage)?.widgets) || []);
+      for (const id in dash.widgets) {
+        const w = dash.widgets[id];
+        const visible = !dash.state.minimized && dash.container.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id));
+        w.card.style.display = visible ? '' : 'none';
+      }
     }
 
     destroy() {
       this._disposed = true;
-      cancelAnimationFrame(this.rafId);
-      for (const id in this.dashboards) {
-        this.doAction({ ACTION: 'destroy', DASH_ID: id });
-      }
+      cancelAnimationFrame(this._raf);
+      for (const id in this.dashboards) this.destroyDashboard({ DASH_ID: id });
     }
   }
 
-  if (!Scratch?.extensions?.unsandboxed) {
-    throw new Error('Dashey Pro must be run unsandboxed.');
+  if (window.dasheyInstance && typeof window.dasheyInstance.destroy === 'function') {
+    try { window.dasheyInstance.destroy(); } catch {}
   }
 
-  if (window.dasheyProInstance && typeof window.dasheyProInstance.destroy === 'function') {
-    try { window.dasheyProInstance.destroy(); } catch (e) {}
-  }
-  
   Scratch.extensions.register((instance => {
-    window.dasheyProInstance = instance;
+    window.dasheyInstance = instance;
     return instance;
   })(new Dashey()));
 
