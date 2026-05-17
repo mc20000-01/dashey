@@ -35,6 +35,31 @@
     }
   };
 
+  const BUILTIN_THEMES = {
+    dark: DEFAULT_THEME,
+    light: {
+      id: 'light', name: 'Light', vars: {
+        '--dp-bg': '#f7f9fc', '--dp-fg': '#172033', '--dp-accent': '#2563eb', '--dp-surface': 'rgba(0,0,0,0.045)',
+        '--dp-surface-2': 'rgba(0,0,0,0.075)', '--dp-border': 'rgba(0,0,0,0.12)', '--dp-shadow': '0 25px 50px -12px rgba(15,23,42,0.22)',
+        '--dp-radius': '12px', '--dp-font': DEFAULT_THEME.vars['--dp-font']
+      }
+    },
+    glass: {
+      id: 'glass', name: 'Glass', vars: {
+        '--dp-bg': 'rgba(18,24,38,0.72)', '--dp-fg': '#ffffff', '--dp-accent': '#a78bfa', '--dp-surface': 'rgba(255,255,255,0.11)',
+        '--dp-surface-2': 'rgba(255,255,255,0.17)', '--dp-border': 'rgba(255,255,255,0.22)', '--dp-shadow': '0 30px 80px -24px rgba(0,0,0,0.72)',
+        '--dp-radius': '18px', '--dp-font': DEFAULT_THEME.vars['--dp-font']
+      }
+    },
+    'high-contrast': {
+      id: 'high-contrast', name: 'High Contrast', vars: {
+        '--dp-bg': '#000000', '--dp-fg': '#ffffff', '--dp-accent': '#ffff00', '--dp-surface': '#111111', '--dp-surface-2': '#1c1c1c',
+        '--dp-border': '#ffffff', '--dp-shadow': '0 0 0 2px #ffffff', '--dp-radius': '4px', '--dp-font': DEFAULT_THEME.vars['--dp-font']
+      }
+    }
+  };
+
+
   const TEMPLATES = {
     blank: { title: 'Blank Dashboard', layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false }, widgets: [] },
     monitor: {
@@ -56,15 +81,25 @@
   };
 
   const WIDGET_TYPES = [
-    'text', 'progress.bar', 'ring.chart', 'status.light', 'image', 'stage', 'audio', 'iframe', 'html', 'log',
-    'chart.line', 'chart.bar', 'chart.multi', 'table.grid', 'control.button', 'control.input', 'control.toggle',
-    'control.slider', 'control.select', 'terminal.console', 'editor.code', 'viewer.minimap'
+    'text', 'metric.number', 'badge', 'progress.bar', 'ring.chart', 'gauge.meter', 'status.light', 'color.swatch',
+    'image', 'stage', 'stage.expand', 'audio', 'iframe', 'html', 'markdown', 'log', 'list.items', 'timeline', 'chart.line',
+    'chart.bar', 'chart.multi', 'table.grid', 'control.button', 'control.input', 'control.toggle',
+    'control.slider', 'control.select', 'terminal.console', 'editor.code', 'viewer.minimap', 'clock', 'spacer'
   ];
+
+  const INTERACTION_MODES = ['both', 'user', 'code', 'none'];
+  const STAGE_VALUE_PROPS = ['x', 'y', 'direction', 'rotation', 'zoom', 'width', 'height', 'mouse x', 'mouse y'];
+  const STAGE_VECTOR_PROPS = ['x', 'y', 'direction', 'rotation', 'size'];
 
   const isObj = v => v && typeof v === 'object' && !Array.isArray(v);
   const clone = v => { try { return structuredClone(v); } catch { return JSON.parse(JSON.stringify(v)); } };
   const uid = (p = 'id') => `${p}_${Math.random().toString(36).slice(2, 9)}_${Date.now().toString(36)}`;
   const clamp = (n, a, b) => Math.max(a, Math.min(b, n));
+  const canInteract = (widget, kind, source) => {
+    const mode = String(widget?.permissions?.[kind] || 'both');
+    return mode === 'both' || mode === source;
+  };
+  const normalizeInteractionMode = value => INTERACTION_MODES.includes(String(value)) ? String(value) : 'both';
   const num = (v, d = 0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
   const jparse = (s, d = null) => { try { return JSON.parse(s); } catch { return d; } };
   const esc = s => String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
@@ -90,7 +125,7 @@
   class Dashey {
     constructor() {
       this.dashboards = Object.create(null);
-      this.themes = { dark: clone(DEFAULT_THEME) };
+      this.themes = clone(BUILTIN_THEMES);
       this.globalZ = 500;
       this.undoStack = [];
       this.redoStack = [];
@@ -126,6 +161,15 @@
           { opcode: 'updateWidget', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] on dashboard [DASH_ID] value to [VALUE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Hello' } } },
           { opcode: 'appendLog', blockType: Scratch.BlockType.COMMAND, text: 'append [VALUE] to log widget [WIDGET_ID] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'log1' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '> message' } } },
           { opcode: 'setWidgetPosition', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] position x [X] y [Y] w [W] h [H] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, W: { type: Scratch.ArgumentType.NUMBER, defaultValue: 3 }, H: { type: Scratch.ArgumentType.NUMBER, defaultValue: 2 } } },
+          { opcode: 'setWidgetInteraction', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] on dashboard [DASH_ID] move [MOVE] resize [RESIZE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, MOVE: { type: Scratch.ArgumentType.STRING, menu: 'INTERACTION_MENU' }, RESIZE: { type: Scratch.ArgumentType.STRING, menu: 'INTERACTION_MENU' } } },
+          { opcode: 'setWidgetFullscreen', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] fullscreen [ON] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, ON: { type: Scratch.ArgumentType.BOOLEAN, defaultValue: true } } },
+          '---',
+          { opcode: 'setVirtualStageCamera', blockType: Scratch.BlockType.COMMAND, text: 'set virtual stage [STAGE_ID] camera x [X] y [Y] zoom [ZOOM] direction [DIRECTION]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, ZOOM: { type: Scratch.ArgumentType.NUMBER, defaultValue: 100 }, DIRECTION: { type: Scratch.ArgumentType.ANGLE, defaultValue: 90 } } },
+          { opcode: 'changeVirtualStageCamera', blockType: Scratch.BlockType.COMMAND, text: 'change virtual stage [STAGE_ID] camera x [DX] y [DY] zoom [DZOOM] direction [DDIRECTION]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, DX: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DY: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DZOOM: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, DDIRECTION: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 } } },
+          { opcode: 'setVirtualStageSize', blockType: Scratch.BlockType.COMMAND, text: 'set virtual stage [STAGE_ID] size w [WIDTH] h [HEIGHT]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, WIDTH: { type: Scratch.ArgumentType.NUMBER, defaultValue: 480 }, HEIGHT: { type: Scratch.ArgumentType.NUMBER, defaultValue: 360 } } },
+          { opcode: 'getVirtualStageInfo', blockType: Scratch.BlockType.REPORTER, text: 'virtual stage [STAGE_ID] [PROP]', arguments: { STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_INFO_MENU' } } },
+          { opcode: 'localiseToStage', blockType: Scratch.BlockType.REPORTER, text: 'localise [VALUE] as [PROP] to stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
+          { opcode: 'normaliseFromStage', blockType: Scratch.BlockType.REPORTER, text: 'normalise [VALUE] as [PROP] from stage [STAGE_ID]', arguments: { VALUE: { type: Scratch.ArgumentType.NUMBER, defaultValue: 0 }, PROP: { type: Scratch.ArgumentType.STRING, menu: 'STAGE_VECTOR_MENU' }, STAGE_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'stage1' } } },
           { opcode: 'setWidgetStyle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] style key [KEY] value [VALUE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, KEY: { type: Scratch.ArgumentType.STRING, defaultValue: 'accent' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '#00d2ff' } } },
           { opcode: 'setWidgetShape', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] shape [SHAPE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, SHAPE: { type: Scratch.ArgumentType.STRING, menu: 'SHAPE_MENU' } } },
           { opcode: 'setWidgetTitle', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] title to [TITLE] on dashboard [DASH_ID]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Widget' } } },
@@ -164,7 +208,10 @@
           WINDOW_MODE_MENU: { acceptReporters: true, items: ['windowed', 'snapped-left', 'snapped-right', 'snapped-top', 'snapped-bottom', 'fullscreen', 'modal'] },
           SHAPE_MENU: { acceptReporters: true, items: ['rounded', 'sharp', 'circle', 'pill'] },
           BIND_DIR_MENU: { acceptReporters: true, items: ['input', 'output', 'both'] },
-          SANDBOX_MENU: { acceptReporters: true, items: ['safe', 'restricted', 'unsafe'] }
+          SANDBOX_MENU: { acceptReporters: true, items: ['safe', 'restricted', 'unsafe'] },
+          INTERACTION_MENU: { acceptReporters: true, items: INTERACTION_MODES },
+          STAGE_INFO_MENU: { acceptReporters: true, items: STAGE_VALUE_PROPS },
+          STAGE_VECTOR_MENU: { acceptReporters: true, items: STAGE_VECTOR_PROPS }
         }
       };
     }
@@ -185,13 +232,26 @@
         .dp-header { user-select: none; -webkit-user-select: none; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: rgba(0,0,0,0.28); border-bottom: 1px solid rgba(255,255,255,0.06); position: relative; min-height: 38px; }
         .dp-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
         .dp-body { flex: 1; overflow: auto; padding: 12px; }
-        .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-content: start; }
+        .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-content: start; min-height: 100%; }
+        .dp-grid.dp-freeform { min-height: 100%; }
         .dp-card { background: var(--dp-surface); border: 1px solid var(--dp-border); border-radius: var(--dp-radius); padding: 12px; overflow: hidden; position: relative; min-height: 48px; box-sizing: border-box; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: transform 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s; }
         .dp-card:hover { background: var(--dp-surface-2); }
         .dp-card.dp-debug { outline: 2px dashed rgba(0,210,255,0.85); outline-offset: -2px; }
+        .dp-card.dp-can-move .dp-label { cursor: grab; touch-action: none; }
+        .dp-card.dp-moving .dp-label { cursor: grabbing; }
+        .dp-card.dp-no-resize > .dp-resize { display: none; }
+        .dp-card.dp-widget-fullscreen { grid-column: 1 / -1 !important; grid-row: 1 / -1 !important; width: 100% !important; height: 100% !important; min-height: calc(100% - 2px); }
+        .dp-card.dp-widget-fullscreen .dp-label { display: none; }
+        .dp-card.dp-widget-fullscreen .dp-resize { display: none; }
+        .dp-card.dp-widget-fullscreen > div:nth-child(2) { height: 100% !important; }
         .dp-label { font-size: 11px; color: rgba(255,255,255,0.68); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 700; }
         .dp-center { display: flex; align-items: center; justify-content: center; }
         .dp-text { font-size: 20px; font-weight: 700; word-break: break-word; }
+        .dp-metric { font-size: 34px; font-weight: 900; line-height: 1; }
+        .dp-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 6px 10px; background: var(--dp-accent); color: #fff; font-size: 12px; font-weight: 800; }
+        .dp-swatch { width: 100%; height: 100%; min-height: 44px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); }
+        .dp-list, .dp-timeline { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+        .dp-clock { font-size: 28px; font-weight: 900; text-align: center; }
         .dp-log { margin: 0; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; overflow: auto; max-height: 100%; }
         .dp-input, .dp-select, .dp-textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.18); color: inherit; border-radius: 10px; padding: 10px 12px; outline: none; }
         .dp-button { width: 100%; border: 0; border-radius: 12px; background: var(--dp-accent); color: #fff; padding: 10px 12px; font-weight: 800; cursor: pointer; }
@@ -202,6 +262,7 @@
         .dp-toggle-on .dp-toggle-thumb { transform: translateX(18px); }
         .dp-slider { width: 100%; }
         .dp-ring { position: relative; width: 64px; height: 64px; margin: 0 auto; }
+        .dp-gauge { width: 100%; height: 72px; }
         .dp-ring svg { transform: rotate(-90deg); overflow: visible; }
         .dp-ring-text { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; }
         .dp-status { width: 24px; height: 24px; border-radius: 50%; margin: 0 auto; box-shadow: 0 0 10px currentColor; }
@@ -252,7 +313,7 @@
     }
 
     _serializeWidget(w) {
-      return { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position };
+      return { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position, permissions: w.permissions, camera: w.camera, fullscreen: !!w.fullscreen };
     }
 
     _serializeDashboard(dash) {
@@ -277,7 +338,7 @@
       dash.activePage = obj.activePage || 'page1';
       dash.security = obj.security || dash.security;
       for (const w of (obj.widgets || [])) {
-        dash.widgets[w.id] = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, dom: {}, card: null, content: null, resizeHandle: null };
+        dash.widgets[w.id] = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, permissions: { move: normalizeInteractionMode(w.permissions?.move), resize: normalizeInteractionMode(w.permissions?.resize) }, camera: this._normalizeStageCamera(w.camera || w.value), fullscreen: !!w.fullscreen, dom: {}, card: null, content: null, resizeHandle: null };
       }
       return dash;
     }
@@ -298,7 +359,7 @@
         }
       }
       if (!bundle) return;
-      this.themes = Object.assign({ dark: clone(DEFAULT_THEME) }, bundle.themes || {});
+      this.themes = Object.assign(clone(BUILTIN_THEMES), bundle.themes || {});
       for (const id in bundle.dashboards || {}) {
         const dash = this._deserializeDashboard(bundle.dashboards[id]);
         this.dashboards[id] = dash;
@@ -355,6 +416,53 @@
         dash.window.y = clamp(num(dash.window.y, 80), bounds.minY, bounds.maxY);
         Object.assign(dash.container.style, {
           left: `${dash.window.x}px`, top: `${dash.window.y}px`, width: `${width}px`, height: `${height}px`
+        });
+      }
+    }
+
+
+    _gridMetrics(dash) {
+      const rect = dash.grid?.getBoundingClientRect?.() || { width: 0 };
+      const cols = clamp(num(dash.layout?.columns, 12), 1, 48);
+      const gap = num(dash.layout?.gap, 12);
+      const colWidth = Math.max(1, (Math.max(1, rect.width) - gap * (cols - 1)) / cols);
+      return { cols, gap, colWidth, rowHeight: num(dash.layout?.rowHeight, 48) };
+    }
+
+    _applyWidgetPermissions(widget) {
+      if (!widget?.card) return;
+      widget.permissions = widget.permissions || { move: 'both', resize: 'both' };
+      widget.permissions.move = normalizeInteractionMode(widget.permissions.move);
+      widget.permissions.resize = normalizeInteractionMode(widget.permissions.resize);
+      widget.card.classList.toggle('dp-can-move', canInteract(widget, 'move', 'user'));
+      widget.card.classList.toggle('dp-no-resize', !canInteract(widget, 'resize', 'user'));
+      widget.card.classList.toggle('dp-widget-fullscreen', !!widget.fullscreen);
+    }
+
+    _applyWidgetPosition(dash, widget) {
+      if (!dash?.grid || !widget?.card) return;
+      widget.position = widget.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' };
+      widget.position.mode = dash.layout.mode === 'freeform' ? 'freeform' : 'grid';
+      this._applyWidgetPermissions(widget);
+      if (widget.position.mode === 'freeform') {
+        Object.assign(widget.card.style, {
+          position: 'absolute',
+          left: `${num(widget.position.x, 0)}px`,
+          top: `${num(widget.position.y, 0)}px`,
+          width: `${Math.max(80, num(widget.position.w, 180))}px`,
+          height: `${Math.max(48, num(widget.position.h, 120))}px`,
+          gridColumn: '',
+          gridRow: ''
+        });
+      } else {
+        Object.assign(widget.card.style, {
+          position: '',
+          left: '',
+          top: '',
+          width: '',
+          height: '',
+          gridColumn: `span ${clamp(num(widget.position.w, 3), 1, 48)}`,
+          gridRow: `span ${clamp(num(widget.position.h, 2), 1, 48)}`
         });
       }
     }
@@ -534,15 +642,123 @@
     }
 
     _wireWidget(dash, widget) {
+      this._applyWidgetPermissions(widget);
       widget.card.addEventListener('mouseenter', () => this._emit('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
       widget.card.addEventListener('click', () => this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
+
+      const moveState = { active: false, pointerId: null, sx: 0, sy: 0, x: 0, y: 0 };
+      const startMove = e => {
+        if (!canInteract(widget, 'move', 'user')) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        if (e.composedPath().some(el => ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el?.tagName))) return;
+        if (widget.position?.mode !== 'freeform') return;
+        moveState.active = true;
+        moveState.pointerId = e.pointerId;
+        moveState.sx = e.clientX;
+        moveState.sy = e.clientY;
+        moveState.x = num(widget.position.x, widget.card.offsetLeft);
+        moveState.y = num(widget.position.y, widget.card.offsetTop);
+        widget.card.classList.add('dp-moving');
+        try { widget.label.setPointerCapture(e.pointerId); } catch {}
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      const moveWidget = e => {
+        if (!moveState.active || (moveState.pointerId !== null && e.pointerId !== moveState.pointerId)) return;
+        const rect = dash.grid.getBoundingClientRect();
+        const wr = widget.card.getBoundingClientRect();
+        const x = clamp(moveState.x + (e.clientX - moveState.sx), 0, Math.max(0, rect.width - wr.width));
+        const y = Math.max(0, moveState.y + (e.clientY - moveState.sy));
+        widget.position.x = x;
+        widget.position.y = y;
+        widget.card.style.left = `${x}px`;
+        widget.card.style.top = `${y}px`;
+        this._emit('widget.dragged', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), source: 'user' });
+      };
+      const endMove = e => {
+        if (!moveState.active || (moveState.pointerId !== null && e.pointerId !== moveState.pointerId)) return;
+        moveState.active = false;
+        moveState.pointerId = null;
+        widget.card.classList.remove('dp-moving');
+        try { widget.label.releasePointerCapture(e.pointerId); } catch {}
+        this._savePersisted();
+      };
+      widget.label.addEventListener('pointerdown', startMove);
+      widget.label.addEventListener('pointermove', moveWidget);
+      widget.label.addEventListener('pointerup', endMove);
+      widget.label.addEventListener('pointercancel', endMove);
+      window.addEventListener('pointermove', moveWidget);
+      window.addEventListener('pointerup', endMove);
+
       if (widget.resizeHandle) {
-        const s = { d: false, sx: 0, sy: 0, w: 0, h: 0 };
-        widget.resizeHandle.addEventListener('mousedown', e => { s.d = true; s.sx = e.clientX; s.sy = e.clientY; const r = widget.card.getBoundingClientRect(); s.w = r.width; s.h = r.height; this._emit('widget.resizestarted', dash, { widgetId: widget.id, value: widget.value }); e.preventDefault(); e.stopPropagation(); });
-        const move = e => { if (!s.d) return; const w = clamp(s.w + (e.clientX - s.sx), 120, 2000); const h = clamp(s.h + (e.clientY - s.sy), 64, 1400); if (widget.position?.mode === 'freeform') { widget.card.style.width = `${w}px`; widget.card.style.height = `${h}px`; widget.position.w = w; widget.position.h = h; } else { const gw = clamp(Math.round(w / 120), 1, 48); const gh = clamp(Math.round(h / 90), 1, 48); widget.card.style.gridColumn = `span ${gw}`; widget.card.style.gridRow = `span ${gh}`; widget.position.w = gw; widget.position.h = gh; } this._emit('widget.resized', dash, { widgetId: widget.id, value: widget.value, width: w, height: h }); };
-        const up = () => { s.d = false; };
-        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-        widget._cleanupResize = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
+        const s = { d: false, pointerId: null, sx: 0, sy: 0, w: 0, h: 0, before: null };
+        const startResize = e => {
+          if (!canInteract(widget, 'resize', 'user')) return;
+          if (e.button !== undefined && e.button !== 0) return;
+          s.d = true;
+          s.pointerId = e.pointerId;
+          s.sx = e.clientX;
+          s.sy = e.clientY;
+          s.before = clone(widget.position);
+          const r = widget.card.getBoundingClientRect();
+          s.w = r.width;
+          s.h = r.height;
+          this._emit('widget.resizestarted', dash, { widgetId: widget.id, value: widget.value });
+          try { widget.resizeHandle.setPointerCapture(e.pointerId); } catch {}
+          e.preventDefault();
+          e.stopPropagation();
+        };
+        const resizeWidget = e => {
+          if (!s.d || (s.pointerId !== null && e.pointerId !== s.pointerId)) return;
+          const w = clamp(s.w + (e.clientX - s.sx), 80, 4000);
+          const h = clamp(s.h + (e.clientY - s.sy), 48, 3000);
+          if (widget.position?.mode === 'freeform') {
+            const gridRect = dash.grid.getBoundingClientRect();
+            const left = num(widget.position.x, 0);
+            const maxW = Math.max(80, gridRect.width - left);
+            widget.position.w = clamp(w, 80, maxW);
+            widget.position.h = h;
+            widget.card.style.width = `${widget.position.w}px`;
+            widget.card.style.height = `${widget.position.h}px`;
+          } else {
+            const m = this._gridMetrics(dash);
+            const gw = clamp(Math.round((w + m.gap) / (m.colWidth + m.gap)), 1, m.cols);
+            const gh = clamp(Math.round((h + m.gap) / (m.rowHeight + m.gap)), 1, 48);
+            widget.position.w = gw;
+            widget.position.h = gh;
+            widget.card.style.gridColumn = `span ${gw}`;
+            widget.card.style.gridRow = `span ${gh}`;
+          }
+          this._emit('widget.resized', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), width: w, height: h, source: 'user' });
+        };
+        const endResize = e => {
+          if (!s.d || (s.pointerId !== null && e.pointerId !== s.pointerId)) return;
+          s.d = false;
+          s.pointerId = null;
+          this._record({ op: 'widget.move', dashId: dash.id, widgetId: widget.id, before: s.before, after: clone(widget.position) });
+          this._savePersisted();
+          try { widget.resizeHandle.releasePointerCapture(e.pointerId); } catch {}
+        };
+        widget.resizeHandle.addEventListener('pointerdown', startResize);
+        widget.resizeHandle.addEventListener('pointermove', resizeWidget);
+        widget.resizeHandle.addEventListener('pointerup', endResize);
+        widget.resizeHandle.addEventListener('pointercancel', endResize);
+        window.addEventListener('pointermove', resizeWidget);
+        window.addEventListener('pointerup', endResize);
+        widget._cleanupResize = () => {
+          widget.label.removeEventListener('pointerdown', startMove);
+          widget.label.removeEventListener('pointermove', moveWidget);
+          widget.label.removeEventListener('pointerup', endMove);
+          widget.label.removeEventListener('pointercancel', endMove);
+          window.removeEventListener('pointermove', moveWidget);
+          window.removeEventListener('pointerup', endMove);
+          widget.resizeHandle.removeEventListener('pointerdown', startResize);
+          widget.resizeHandle.removeEventListener('pointermove', resizeWidget);
+          widget.resizeHandle.removeEventListener('pointerup', endResize);
+          widget.resizeHandle.removeEventListener('pointercancel', endResize);
+          window.removeEventListener('pointermove', resizeWidget);
+          window.removeEventListener('pointerup', endResize);
+        };
       }
     }
 
@@ -555,18 +771,32 @@
       const center = () => c.classList.add('dp-center');
       if (t === 'text') {
         center(); const el = document.createElement('div'); el.className = 'dp-text'; el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.text = el;
+      } else if (t === 'metric.number') {
+        center(); const el = document.createElement('div'); el.className = 'dp-metric'; el.textContent = String(data?.value ?? data ?? '0'); c.appendChild(el); widget.dom.text = el;
+      } else if (t === 'badge') {
+        center(); const el = document.createElement('span'); el.className = 'dp-badge'; el.textContent = String(data?.label ?? data ?? 'Badge'); if (data?.color) el.style.background = data.color; c.appendChild(el); widget.dom.badge = el;
+      } else if (t === 'clock') {
+        center(); const el = document.createElement('div'); el.className = 'dp-clock'; c.appendChild(el); widget.dom.text = el; widget._needsClock = true;
+      } else if (t === 'spacer') {
+        widget.label.style.display = 'none'; c.style.height = '100%';
       } else if (t === 'progress.bar') {
         c.innerHTML = `<div><div style="width:100%;height:10px;border-radius:999px;background:rgba(255,255,255,0.08);overflow:hidden"><div class="dp-bar-fill" style="height:100%;width:0;background:var(--dp-accent);border-radius:999px"></div></div><div class="dp-bar-txt" style="text-align:right;margin-top:5px;font-size:12px;font-weight:700"></div></div>`; widget.dom.fill = c.querySelector('.dp-bar-fill'); widget.dom.text = c.querySelector('.dp-bar-txt');
       } else if (t === 'ring.chart') {
         center(); const r = 26, circ = 2 * Math.PI * r; c.innerHTML = `<div class="dp-ring"><svg width="64" height="64" viewBox="0 0 60 60"><circle cx="30" cy="30" r="${r}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="6"></circle><circle class="dp-ring-fill" cx="30" cy="30" r="${r}" fill="none" stroke="var(--dp-accent)" stroke-linecap="round" stroke-width="6" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"></circle></svg><div class="dp-ring-text">0%</div></div>`; widget.dom.ring = c.querySelector('.dp-ring-fill'); widget.dom.text = c.querySelector('.dp-ring-text');
+      } else if (t === 'gauge.meter') {
+        center(); const meter = document.createElement('meter'); meter.className = 'dp-gauge'; meter.min = 0; meter.max = 100; meter.value = clamp(num(data?.value ?? data, 0), 0, 100); c.appendChild(meter); widget.dom.meter = meter;
       } else if (t === 'status.light') {
         center(); const el = document.createElement('div'); el.className = 'dp-status'; el.style.color = String(data || '#00d2ff'); el.style.background = String(data || '#00d2ff'); c.appendChild(el); widget.dom.light = el;
+      } else if (t === 'color.swatch') {
+        const el = document.createElement('div'); el.className = 'dp-swatch'; el.style.background = String(data?.color ?? data ?? '#00d2ff'); c.appendChild(el); widget.dom.swatch = el;
       } else if (t === 'image') {
         const img = document.createElement('img'); img.className = 'dp-img'; img.src = String(data || ''); c.appendChild(img); widget.dom.img = img;
       } else if (t === 'iframe') {
         const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups'); fr.src = String(data || 'about:blank'); c.appendChild(fr); widget.dom.iframe = fr;
       } else if (t === 'html') {
         const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-same-origin'); fr.srcdoc = sanitizeHTML(String(data || '')); c.appendChild(fr); widget.dom.iframe = fr;
+      } else if (t === 'markdown') {
+        const el = document.createElement('div'); el.className = 'dp-markdown'; el.innerHTML = sanitizeHTML(String(data ?? '').replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')); c.appendChild(el); widget.dom.markdown = el;
       } else if (t === 'audio') {
         const a = document.createElement('audio'); a.controls = true; a.className = 'dp-audio'; a.src = String(data || ''); c.appendChild(a); widget.dom.audio = a;
       } else if (t === 'log') {
@@ -591,13 +821,15 @@
         const ta = document.createElement('textarea'); ta.className = 'dp-textarea'; ta.spellcheck = false; ta.value = String(data?.value ?? ''); ta.style.minHeight = '140px'; ta.style.fontFamily = 'monospace'; ta.oninput = () => this._setWidgetValue(dash, widget, ta.value, 'ui'); c.appendChild(ta); widget.dom.textarea = ta; widget.inputEl = ta;
       } else if (t === 'viewer.minimap') {
         const cvs = document.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
-      } else if (t === 'stage') {
+      } else if (t === 'stage' || t === 'stage.expand') {
+        widget.camera = this._normalizeStageCamera(widget.camera || data);
         const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
       } else {
         const el = document.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
       }
       this._wireWidget(dash, widget);
       this._applyWidgetStyle(widget);
+      if (!['terminal.console', 'stage', 'stage.expand'].includes(t)) this._updateWidgetDom(widget, rawValue);
       return widget;
     }
 
@@ -639,14 +871,21 @@
     _updateWidgetDom(widget, value) {
       const t = widget.type; const v = value; const n = clamp(num(v, 0), 0, 100);
       if (t === 'text' && widget.dom.text) widget.dom.text.textContent = String(v ?? '');
+      else if (t === 'metric.number' && widget.dom.text) widget.dom.text.textContent = String(v?.value ?? v ?? '0');
+      else if (t === 'badge' && widget.dom.badge) { widget.dom.badge.textContent = String(v?.label ?? v ?? 'Badge'); if (v?.color) widget.dom.badge.style.background = v.color; }
+      else if (t === 'clock' && widget.dom.text) widget.dom.text.textContent = new Date().toLocaleTimeString([], isObj(v) ? v : undefined);
       else if (t === 'progress.bar') { if (widget.dom.fill) widget.dom.fill.style.width = `${n}%`; if (widget.dom.text) widget.dom.text.textContent = `${n}%`; }
       else if (t === 'ring.chart') { if (widget.dom.ring) { const r = 26, circ = 2 * Math.PI * r; widget.dom.ring.style.strokeDasharray = `${circ}`; widget.dom.ring.style.strokeDashoffset = `${circ - (n / 100) * circ}`; } if (widget.dom.text) widget.dom.text.textContent = `${n}%`; }
+      else if (t === 'gauge.meter' && widget.dom.meter) widget.dom.meter.value = n;
       else if (t === 'status.light' && widget.dom.light) { const c = String(v || '#00d2ff'); widget.dom.light.style.background = c; widget.dom.light.style.color = c; }
+      else if (t === 'color.swatch' && widget.dom.swatch) widget.dom.swatch.style.background = String(v?.color ?? v ?? '#00d2ff');
       else if (t === 'image' && widget.dom.img) widget.dom.img.src = String(v || '');
       else if (t === 'iframe' && widget.dom.iframe) widget.dom.iframe.src = String(v || 'about:blank');
       else if (t === 'html' && widget.dom.iframe) widget.dom.iframe.srcdoc = sanitizeHTML(String(v || ''));
+      else if (t === 'markdown' && widget.dom.markdown) widget.dom.markdown.innerHTML = sanitizeHTML(String(v ?? '').replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>'));
       else if (t === 'audio' && widget.dom.audio) widget.dom.audio.src = String(v || '');
       else if (t === 'log' && widget.dom.log) widget.dom.log.textContent = (Array.isArray(v?.lines) ? v.lines.join('\n') : String(v ?? '')) + '\n';
+      else if ((t === 'list.items' || t === 'timeline') && widget.dom.list) { const items = Array.isArray(v?.items) ? v.items : Array.isArray(v) ? v : String(v ?? '').split(/[,\n]/).filter(Boolean); widget.dom.list.innerHTML = ''; items.forEach(item => { const li = document.createElement('li'); li.textContent = String(item?.label ?? item); widget.dom.list.appendChild(li); }); }
       else if (t === 'control.button' && widget.dom.button) widget.dom.button.textContent = v?.label || widget.title || 'Button';
       else if (t === 'control.input' && widget.dom.input) widget.dom.input.value = String(v ?? '');
       else if (t === 'control.toggle' && widget.dom.toggle) { const on = !!(v?.value ?? v); widget.dom.toggle.classList.toggle('dp-toggle-on', on); if (widget.dom.toggleLabel) widget.dom.toggleLabel.textContent = on ? (v?.onLabel || 'On') : (v?.offLabel || 'Off'); }
@@ -657,7 +896,7 @@
       else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') widget._needsChartRedraw = true;
       else if (t === 'table.grid') widget._needsTableRedraw = true;
       else if (t === 'viewer.minimap') widget._needsMiniRedraw = true;
-      else if (t === 'stage') widget._needsStageRedraw = true;
+      else if (t === 'stage' || t === 'stage.expand') { widget.camera = this._normalizeStageCamera(v); widget._needsStageRedraw = true; }
     }
 
     _setDashboardVarInternal(dash, name, value, source = 'code') {
@@ -671,6 +910,16 @@
         }
         this._markDirty(dash);
       }
+    }
+
+
+    _readMouse(axis) {
+      try {
+        const mouse = Scratch?.vm?.runtime?.ioDevices?.mouse;
+        if (axis === 'x') return num(mouse?.getScratchX?.(), 0);
+        return num(mouse?.getScratchY?.(), 0);
+      } catch {}
+      return 0;
     }
 
     _readScratchVar(name) {
@@ -737,6 +986,75 @@
 
     _findDashOfWidget(widgetId) { for (const id in this.dashboards) if (this.dashboards[id].widgets[widgetId]) return this.dashboards[id]; return null; }
 
+
+    _normalizeStageCamera(value = {}) {
+      const parsed = typeof value === 'string' ? jparse(value, {}) : value;
+      const data = isObj(parsed) ? parsed : {};
+      return {
+        x: num(data.x, 0),
+        y: num(data.y, 0),
+        zoom: Math.max(1, num(data.zoom, 100)),
+        direction: num(data.direction ?? data.rotation, 90),
+        width: Math.max(1, num(data.width, 480)),
+        height: Math.max(1, num(data.height, 360))
+      };
+    }
+
+    _findVirtualStage(id) {
+      const key = String(id);
+      for (const dashId in this.dashboards) {
+        const w = this.dashboards[dashId].widgets[key];
+        if (w && (w.type === 'stage' || w.type === 'stage.expand')) return w;
+      }
+      return null;
+    }
+
+    _getVirtualStageCamera(id) {
+      const w = this._findVirtualStage(id);
+      if (!w) return this._normalizeStageCamera();
+      w.camera = this._normalizeStageCamera(w.camera || w.value);
+      return w.camera;
+    }
+
+    _setVirtualStageCameraState(id, updater) {
+      const w = this._findVirtualStage(id);
+      if (!w) return null;
+      const next = this._normalizeStageCamera(w.camera || w.value);
+      updater(next);
+      next.zoom = Math.max(1, num(next.zoom, 100));
+      next.width = Math.max(1, num(next.width, 480));
+      next.height = Math.max(1, num(next.height, 360));
+      w.camera = next;
+      w.value = { ...(isObj(w.value) ? w.value : {}), ...next };
+      w._needsStageRedraw = true;
+      const d = this._findDashOfWidget(w.id);
+      if (d) this._markDirty(d);
+      return w;
+    }
+
+    _localStageVector(stageId, value, prop, invert = false) {
+      const cam = this._getVirtualStageCamera(stageId);
+      const zoom = cam.zoom / 100 || 1;
+      const v = num(value, 0);
+      const p = String(prop).toLowerCase();
+      if (p === 'size') return invert ? v / zoom : v * zoom;
+      if (p === 'direction' || p === 'rotation') return invert ? v + (cam.direction - 90) : v - (cam.direction - 90);
+      const angle = (90 - cam.direction) * Math.PI / 180;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      const worldToLocal = (x, y) => {
+        const dx = x - cam.x;
+        const dy = y - cam.y;
+        return { x: zoom * (dx * cos - dy * sin), y: zoom * (dx * sin + dy * cos) };
+      };
+      const localToWorld = (x, y) => {
+        const lx = x / zoom;
+        const ly = y / zoom;
+        return { x: cam.x + lx * cos + ly * sin, y: cam.y - lx * sin + ly * cos };
+      };
+      if (!invert) return p === 'y' ? worldToLocal(0, v).y : worldToLocal(v, 0).x;
+      return p === 'y' ? localToWorld(0, v).y : localToWorld(v, 0).x;
+    }
+
     _drawChart(widget) {
       const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
       const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
@@ -773,10 +1091,42 @@
       pts.forEach(pt => { const x = (pt.x - (b.x || 0)) * sx; const y = (pt.y - (b.y || 0)) * sy; ctx.fillStyle = pt.color || '#00d2ff'; ctx.beginPath(); ctx.arc(x, y, 4 * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); });
     }
 
+    _getStageCanvas() {
+      const renderer = Scratch?.vm?.runtime?.renderer;
+      return renderer?._gl?.canvas || renderer?.canvas || document.querySelector('canvas[class*="stage"], canvas');
+    }
+
     _drawStage(widget) {
-      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return; const src = Scratch?.vm?.runtime?.renderer?.canvas; if (!src) return;
+      const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
+      const src = this._getStageCanvas();
       const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
-      ctx.clearRect(0, 0, w, h); try { ctx.drawImage(src, 0, 0, w, h); } catch {}
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
+      if (!src || src === c || !src.width || !src.height) {
+        ctx.fillStyle = 'rgba(255,255,255,0.72)'; ctx.font = `${12 * devicePixelRatio}px sans-serif`; ctx.textAlign = 'center'; ctx.fillText('Stage unavailable', w / 2, h / 2);
+        return;
+      }
+      if (widget.type !== 'stage.expand') {
+        const scale = Math.min(w / src.width, h / src.height);
+        const dw = src.width * scale, dh = src.height * scale;
+        const dx = (w - dw) / 2, dy = (h - dh) / 2;
+        try { ctx.drawImage(src, dx, dy, dw, dh); } catch {}
+        return;
+      }
+      const cam = this._normalizeStageCamera(widget.camera || widget.value);
+      widget.camera = cam;
+      const native = Scratch?.vm?.runtime?.renderer?._nativeSize || [Scratch?.vm?.runtime?.stageWidth || 480, Scratch?.vm?.runtime?.stageHeight || 360];
+      const stageW = num(native[0], 480), stageH = num(native[1], 360);
+      const scratchScale = Math.min(w / cam.width, h / cam.height) * (cam.zoom / 100);
+      const angle = (90 - cam.direction) * Math.PI / 180;
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.scale(scratchScale, scratchScale);
+      ctx.rotate(angle);
+      ctx.translate(-cam.x, -cam.y);
+      try { ctx.drawImage(src, -stageW / 2, stageH / 2, stageW, -stageH); } catch {}
+      ctx.restore();
     }
 
 
@@ -787,7 +1137,8 @@
         if (!d.container || d.container.style.display === 'none') continue;
         for (const wid in d.widgets) {
           const w = d.widgets[wid];
-          if (w.type === 'stage' && w.dom.canvas) this._drawStage(w);
+          if ((w.type === 'stage' || w.type === 'stage.expand') && w.dom.canvas) this._drawStage(w);
+          if (w.type === 'clock' && w.dom.text) this._updateWidgetDom(w, w.value);
           if (w._needsChartRedraw && w.dom.canvas) { w._needsChartRedraw = false; this._drawChart(w); }
           if (w._needsTableRedraw && w.dom.tableWrap) { w._needsTableRedraw = false; this._drawTable(w); }
           if (w._needsMiniRedraw && w.dom.canvas) { w._needsMiniRedraw = false; this._drawMinimap(w); }
@@ -798,13 +1149,13 @@
 
     createDashboard(args) { const id = String(args.DASH_ID); const title = String(args.TITLE || id); if (this.dashboards[id]) { this.setDashboardTitle({ DASH_ID: id, TITLE: title }); this.showDashboard({ DASH_ID: id }); return; } const d = this._makeDashboard(id, title); this.dashboards[id] = d; this._createHostAndWindow(d); this._renderDashboardFromModel(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
     createFromTemplate(args) { const tpl = TEMPLATES[String(args.TEMPLATE)] || TEMPLATES.blank; this.createDashboard({ DASH_ID: String(args.DASH_ID), TITLE: tpl.title }); const d = this._getDash(args.DASH_ID); d.layout = clone(tpl.layout); tpl.widgets.forEach(w => { this.addWidget({ DASH_ID: d.id, WIDGET_ID: w.id, TYPE: w.type, TITLE: w.title || w.id, VALUE: JSON.stringify(w.value ?? '') }); this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: w.pos?.x || 0, Y: w.pos?.y || 0, W: w.pos?.w || 3, H: w.pos?.h || 2 }); }); this._savePersisted(); }
-    _renderDashboardFromModel(d) { if (!d?.grid) return; d.grid.innerHTML = ''; for (const wid in d.widgets) { const w = d.widgets[wid]; if (w?.card) d.grid.appendChild(w.card); } this._refreshWidgetVisibility(d); }
+    _renderDashboardFromModel(d) { if (!d?.grid) return; d.grid.innerHTML = ''; d.grid.classList.toggle('dp-freeform', d.layout.mode === 'freeform'); if (d.layout.mode === 'freeform') { d.grid.style.position = 'relative'; d.grid.style.display = 'block'; } else { d.grid.style.position = ''; d.grid.style.display = 'grid'; d.grid.style.gridTemplateColumns = `repeat(${clamp(num(d.layout.columns, 12), 1, 48)}, minmax(0, 1fr))`; d.grid.style.gap = `${num(d.layout.gap, 12)}px`; } for (const wid in d.widgets) { const w = d.widgets[wid]; if (w?.card) { d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } } this._refreshWidgetVisibility(d); }
     showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
     hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.container.style.display = 'none'; this._savePersisted(); }
     destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; if (d.cleanupDrag) d.cleanupDrag(); if (d.cleanupResize) d.cleanupResize(); for (const wid in d.widgets) { const w = d.widgets[wid]; if (w._cleanupResize) w._cleanupResize(); } if (d.host?.parentNode) d.host.parentNode.removeChild(d.host); delete this.dashboards[d.id]; this._savePersisted(); }
     setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; this._savePersisted(); }
-    setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) { if (d.layout.mode === 'freeform') { d.grid.style.position = 'relative'; d.grid.style.display = 'block'; } else { d.grid.style.position = ''; d.grid.style.display = 'grid'; d.grid.style.gridTemplateColumns = `repeat(${d.layout.columns}, minmax(0, 1fr))`; d.grid.style.gap = `${d.layout.gap}px`; } } this._markDirty(d); this._savePersisted(); }
-    setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme = clone(this.themes[String(args.THEME)] || this.themes.dark); this._applyTheme(d); this._savePersisted(); }
+    setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) this._renderDashboardFromModel(d); this._markDirty(d); this._savePersisted(); }
+    setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const name = String(args.THEME); if (name !== 'custom') d.theme = clone(this.themes[name] || this.themes.dark); else d.theme = d.theme || clone(DEFAULT_THEME); this._applyTheme(d); this._savePersisted(); }
     setDashboardColor(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme.vars['--dp-bg'] = String(args.BG); d.theme.vars['--dp-fg'] = String(args.FG); d.theme.vars['--dp-accent'] = String(args.ACC); this._applyTheme(d); this._savePersisted(); }
     setDashboardWindow(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.window.mode = 'windowed'; d.window.x = num(args.X, d.window.x); d.window.y = num(args.Y, d.window.y); d.window.width = num(args.W, d.window.width); d.window.height = num(args.H, d.window.height); this._syncWindowStyles(d); this._savePersisted(); }
     setWindowMode(args) {
@@ -830,13 +1181,21 @@
     addWidget(args) {
       const d = this._getDash(args.DASH_ID, args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); if (d.widgets[id]) this.removeWidget({ DASH_ID: d.id, WIDGET_ID: id });
       const t = String(args.TYPE), title = String(args.TITLE || id), raw = this._sanitizeValue(t, args.VALUE);
-      const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: 3, h: 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, dom: {}, card: null, content: null, resizeHandle: null };
-      d.widgets[id] = w; this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
+      const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: d.layout.mode === 'freeform' ? 180 : 3, h: d.layout.mode === 'freeform' ? 120 : 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, permissions: { move: 'both', resize: 'both' }, camera: this._normalizeStageCamera(raw), fullscreen: false, dom: {}, card: null, content: null, resizeHandle: null };
+      d.widgets[id] = w; this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
     }
-    _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
+    _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap', 'metric.number', 'badge', 'gauge.meter', 'color.swatch', 'list.items', 'timeline', 'clock', 'stage.expand'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
     updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._savePersisted(); }
     appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._savePersisted(); }
-    setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.position); w.position = w.position || {}; w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); w.position.w = num(args.W, 3); w.position.h = num(args.H, 2); w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; if (w.position.mode === 'freeform') { w.card.style.position = 'absolute'; w.card.style.left = `${w.position.x}px`; w.card.style.top = `${w.position.y}px`; w.card.style.width = `${w.position.w}px`; w.card.style.height = `${w.position.h}px`; } else { w.card.style.position = ''; w.card.style.gridColumn = `span ${clamp(w.position.w, 1, 48)}`; w.card.style.gridRow = `span ${clamp(w.position.h, 1, 48)}`; } this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position) }); this._savePersisted(); }
+    setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._savePersisted(); }
+    setWidgetInteraction(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.permissions = { move: normalizeInteractionMode(args.MOVE), resize: normalizeInteractionMode(args.RESIZE) }; this._applyWidgetPermissions(w); this._savePersisted(); }
+    setWidgetFullscreen(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; if (!!args.ON && Object.keys(d.widgets).length !== 1) return; w.fullscreen = !!args.ON; this._applyWidgetPosition(d, w); this._savePersisted(); }
+    setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) this._savePersisted(); }
+    changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) this._savePersisted(); }
+    setVirtualStageSize(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.width = num(args.WIDTH, 480); cam.height = num(args.HEIGHT, 360); }); if (w) this._savePersisted(); }
+    getVirtualStageInfo(args) { const cam = this._getVirtualStageCamera(args.STAGE_ID); const prop = String(args.PROP).toLowerCase(); if (prop === 'rotation') return cam.direction; if (prop === 'mouse x') return this._localStageVector(args.STAGE_ID, this._readMouse('x'), 'x', false); if (prop === 'mouse y') return this._localStageVector(args.STAGE_ID, this._readMouse('y'), 'y', false); return cam[prop] ?? ''; }
+    localiseToStage(args) { return this._localStageVector(args.STAGE_ID, args.VALUE, args.PROP, false); }
+    normaliseFromStage(args) { return this._localStageVector(args.STAGE_ID, args.VALUE, args.PROP, true); }
     setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._savePersisted(); }
     setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
     setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); w.label.textContent = w.title; this._savePersisted(); }
