@@ -1216,6 +1216,7 @@
         } catch {}
       }
       this._stageFrameHook = hook;
+      this._updateStageFrameCache();
     }
 
     _removeStageFrameCacheHook() {
@@ -1258,7 +1259,11 @@
     }
 
     _getStageFrameCanvas() {
-      const cache = this._stageFrameCache;
+      let cache = this._stageFrameCache;
+      if (!cache?.canvas || !cache.width || !cache.height || !cache.updatedAt) {
+        this._updateStageFrameCache();
+        cache = this._stageFrameCache;
+      }
       if (!cache?.canvas || !cache.width || !cache.height || !cache.updatedAt) return null;
       return cache.canvas;
     }
