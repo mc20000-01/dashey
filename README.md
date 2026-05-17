@@ -59,7 +59,7 @@ Dashey windows are designed to feel like small desktop panels:
 
 ## Virtual expanded stages
 
-Use a `stage.expand` widget when a dashboard window should act like its own camera view into the Scratch stage. The virtual stage camera stores its own `x`, `y`, `zoom`, `direction`, `width`, and `height`, so multiple Dashey windows can behave like separate fake stages for OS/window-manager style projects.
+Use a `stage.expand` widget when a dashboard window should act like its own camera view into the Scratch stage. The virtual stage camera stores its own `x`, `y`, `zoom`, `direction`, `width`, and `height`, so multiple Dashey windows can behave like separate fake stages for OS/window-manager style projects. By default, the virtual stage id is the widget id; set `stageId` or `camera.id` in the widget value when a `stage` or `stage.expand` widget needs a separate explicit stage id.
 
 Useful blocks:
 

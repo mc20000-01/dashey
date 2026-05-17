@@ -134,6 +134,7 @@
       this._disposed = false;
       this._stageFrameCache = { canvas: null, ctx: null, width: 0, height: 0, updatedAt: 0 };
       this._stageFrameHook = null;
+      this._missingVirtualStageWarnings = new Set();
       this._stageLoop = this._stageLoop.bind(this);
       this._injectStyles();
       this._loadPersisted();
@@ -324,7 +325,13 @@
     }
 
     _serializeWidget(w) {
-      return { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position, permissions: w.permissions, camera: w.camera, fullscreen: !!w.fullscreen };
+      const data = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state, style: w.style, sandbox: w.sandbox, position: w.position, permissions: w.permissions, camera: w.camera, fullscreen: !!w.fullscreen };
+      if (this._isStageWidget(w)) {
+        const stageId = this._getVirtualStageId(w);
+        data.stageId = stageId;
+        data.camera = { ...this._normalizeStageCamera(w.camera || w.value), id: stageId };
+      }
+      return data;
     }
 
     _serializeDashboard(dash) {
@@ -349,7 +356,9 @@
       dash.activePage = obj.activePage || 'page1';
       dash.security = obj.security || dash.security;
       for (const w of (obj.widgets || [])) {
-        dash.widgets[w.id] = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, permissions: { move: normalizeInteractionMode(w.permissions?.move), resize: normalizeInteractionMode(w.permissions?.resize) }, camera: this._normalizeStageCamera(w.camera || w.value), fullscreen: !!w.fullscreen, dom: {}, card: null, content: null, resizeHandle: null };
+        const widget = { id: w.id, type: w.type, title: w.title, value: w.value, state: w.state || {}, style: w.style || {}, sandbox: w.sandbox || 'safe', position: w.position || { x: 0, y: 0, w: 3, h: 2, mode: 'grid' }, permissions: { move: normalizeInteractionMode(w.permissions?.move), resize: normalizeInteractionMode(w.permissions?.resize) }, camera: this._normalizeStageCamera(w.camera || w.value), fullscreen: !!w.fullscreen, dom: {}, card: null, content: null, resizeHandle: null };
+        if (this._isStageWidget(widget)) this._applyVirtualStageId(widget, w);
+        dash.widgets[w.id] = widget;
       }
       return dash;
     }
@@ -835,6 +844,7 @@
       } else if (t === 'stage' || t === 'stage.expand') {
         widget.card.classList.add('dp-stage-card');
         widget.camera = this._normalizeStageCamera(widget.camera || data);
+        this._applyVirtualStageId(widget, data);
         const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
       } else {
         const el = document.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
@@ -908,7 +918,7 @@
       else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') widget._needsChartRedraw = true;
       else if (t === 'table.grid') widget._needsTableRedraw = true;
       else if (t === 'viewer.minimap') widget._needsMiniRedraw = true;
-      else if (t === 'stage' || t === 'stage.expand') { widget.camera = this._normalizeStageCamera(v); widget._needsStageRedraw = true; }
+      else if (t === 'stage' || t === 'stage.expand') { widget.camera = this._normalizeStageCamera(v); this._applyVirtualStageId(widget, v); widget._needsStageRedraw = true; }
     }
 
     _setDashboardVarInternal(dash, name, value, source = 'code') {
@@ -1002,22 +1012,64 @@
     _normalizeStageCamera(value = {}) {
       const parsed = typeof value === 'string' ? jparse(value, {}) : value;
       const data = isObj(parsed) ? parsed : {};
-      return {
-        x: num(data.x, 0),
-        y: num(data.y, 0),
-        zoom: Math.max(1, num(data.zoom, 100)),
-        direction: num(data.direction ?? data.rotation, 90),
-        width: Math.max(1, num(data.width, 480)),
-        height: Math.max(1, num(data.height, 360))
+      const camera = isObj(data.camera) ? data.camera : data;
+      const result = {
+        x: num(camera.x, 0),
+        y: num(camera.y, 0),
+        zoom: Math.max(1, num(camera.zoom, 100)),
+        direction: num(camera.direction ?? camera.rotation, 90),
+        width: Math.max(1, num(camera.width, 480)),
+        height: Math.max(1, num(camera.height, 360))
       };
+      const stageId = this._readVirtualStageId(data);
+      if (stageId) result.id = stageId;
+      return result;
+    }
+
+    _isStageWidget(widget) {
+      return widget?.type === 'stage' || widget?.type === 'stage.expand';
+    }
+
+    _readVirtualStageId(value) {
+      const parsed = typeof value === 'string' ? jparse(value, {}) : value;
+      const data = isObj(parsed) ? parsed : {};
+      const camera = isObj(data.camera) ? data.camera : null;
+      const nestedValue = isObj(data.value) ? data.value : null;
+      const valueCamera = isObj(nestedValue?.camera) ? nestedValue.camera : null;
+      const id = data.stageId ?? camera?.id ?? nestedValue?.stageId ?? valueCamera?.id ?? nestedValue?.id ?? data.id;
+      return id === undefined || id === null || String(id) === '' ? '' : String(id);
+    }
+
+    _getVirtualStageId(widget) {
+      return this._readVirtualStageId(widget) || String(widget?.id ?? '');
+    }
+
+    _applyVirtualStageId(widget, value) {
+      if (!this._isStageWidget(widget)) return;
+      const stageId = this._readVirtualStageId(value) || this._readVirtualStageId(widget) || String(widget.id);
+      widget.stageId = stageId;
+      widget.camera = { ...this._normalizeStageCamera(widget.camera || widget.value), id: stageId };
+    }
+
+    _warnMissingVirtualStage(id) {
+      const key = String(id);
+      if (this._missingVirtualStageWarnings.has(key)) return;
+      this._missingVirtualStageWarnings.add(key);
+      console.warn(`[Dashey] virtual stage "${key}" not found. Stage widgets default to their widget id unless value.stageId or camera.id is set.`);
     }
 
     _findVirtualStage(id) {
       const key = String(id);
       for (const dashId in this.dashboards) {
-        const w = this.dashboards[dashId].widgets[key];
-        if (w && (w.type === 'stage' || w.type === 'stage.expand')) return w;
+        const widgets = this.dashboards[dashId].widgets;
+        const direct = widgets[key];
+        if (this._isStageWidget(direct)) return direct;
+        for (const widgetId in widgets) {
+          const w = widgets[widgetId];
+          if (this._isStageWidget(w) && this._getVirtualStageId(w) === key) return w;
+        }
       }
+      this._warnMissingVirtualStage(key);
       return null;
     }
 
@@ -1310,9 +1362,10 @@
       const d = this._getDash(args.DASH_ID, args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); if (d.widgets[id]) this.removeWidget({ DASH_ID: d.id, WIDGET_ID: id });
       const t = String(args.TYPE), title = String(args.TITLE || id), raw = this._sanitizeValue(t, args.VALUE);
       const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: d.layout.mode === 'freeform' ? 180 : 3, h: d.layout.mode === 'freeform' ? 120 : 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, permissions: { move: 'both', resize: 'both' }, camera: this._normalizeStageCamera(raw), fullscreen: false, dom: {}, card: null, content: null, resizeHandle: null };
+      if (this._isStageWidget(w)) this._applyVirtualStageId(w, raw);
       d.widgets[id] = w; this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
     }
-    _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap', 'metric.number', 'badge', 'gauge.meter', 'color.swatch', 'list.items', 'timeline', 'clock', 'stage.expand'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
+    _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap', 'metric.number', 'badge', 'gauge.meter', 'color.swatch', 'list.items', 'timeline', 'clock', 'stage', 'stage.expand'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
     updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._savePersisted(); }
     appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._savePersisted(); }
     setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._savePersisted(); }
