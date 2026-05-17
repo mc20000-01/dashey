@@ -132,9 +132,12 @@
       this.redoStack = [];
       this.renderQueued = false;
       this._disposed = false;
+      this._stageFrameCache = { canvas: null, ctx: null, width: 0, height: 0, updatedAt: 0 };
+      this._stageFrameHook = null;
       this._stageLoop = this._stageLoop.bind(this);
       this._injectStyles();
       this._loadPersisted();
+      this._ensureStageFrameCacheHook();
       this._raf = requestAnimationFrame(this._stageLoop);
       window.addEventListener('beforeunload', () => this._savePersisted());
     }
@@ -1100,14 +1103,98 @@
       pts.forEach(pt => { const x = (pt.x - (b.x || 0)) * sx; const y = (pt.y - (b.y || 0)) * sy; ctx.fillStyle = pt.color || '#00d2ff'; ctx.beginPath(); ctx.arc(x, y, 4 * devicePixelRatio, 0, Math.PI * 2); ctx.fill(); });
     }
 
+    _ensureStageFrameCacheHook() {
+      const renderer = Scratch?.vm?.runtime?.renderer;
+      if (!renderer || this._stageFrameHook?.renderer === renderer) return;
+      this._removeStageFrameCacheHook();
+      const hook = { renderer, eventOffs: [] };
+      const update = () => { if (!this._disposed) this._updateStageFrameCache(); };
+      const eventNames = ['draw', 'afterDraw', 'rendered', 'afterRender', 'RENDERED', 'AFTER_RENDER'];
+      if (typeof renderer.on === 'function') {
+        eventNames.forEach(name => {
+          try {
+            renderer.on(name, update);
+            hook.eventOffs.push(() => {
+              try {
+                if (typeof renderer.off === 'function') renderer.off(name, update);
+                else if (typeof renderer.removeListener === 'function') renderer.removeListener(name, update);
+              } catch {}
+            });
+          } catch {}
+        });
+      }
+      const originalDraw = typeof renderer.draw === 'function' ? renderer.draw : null;
+      if (originalDraw) {
+        const self = this;
+        const wrappedDraw = function (...args) {
+          const result = originalDraw.apply(this, args);
+          self._updateStageFrameCache();
+          return result;
+        };
+        try {
+          renderer.draw = wrappedDraw;
+          hook.originalDraw = originalDraw;
+          hook.wrappedDraw = wrappedDraw;
+        } catch {}
+      }
+      this._stageFrameHook = hook;
+    }
+
+    _removeStageFrameCacheHook() {
+      const hook = this._stageFrameHook;
+      if (!hook) return;
+      (hook.eventOffs || []).forEach(off => off());
+      try {
+        if (hook.renderer?.draw === hook.wrappedDraw && hook.originalDraw) hook.renderer.draw = hook.originalDraw;
+      } catch {}
+      this._stageFrameHook = null;
+    }
+
+    _updateStageFrameCache() {
+      const src = this._getStageCanvas();
+      if (!src || src === this._stageFrameCache.canvas || !src.width || !src.height) return false;
+      if (src.classList?.contains?.('dp-stage-canvas')) return false;
+      const width = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.floor(src.width)));
+      const height = Math.max(1, Math.min(MAX_CANVAS_DIMENSION, Math.floor(src.height)));
+      if (!this._stageFrameCache.canvas) {
+        this._stageFrameCache.canvas = document.createElement('canvas');
+        this._stageFrameCache.ctx = this._stageFrameCache.canvas.getContext('2d');
+      }
+      const cache = this._stageFrameCache;
+      if (!cache.ctx) return false;
+      if (cache.canvas.width !== width || cache.canvas.height !== height) {
+        cache.canvas.width = width;
+        cache.canvas.height = height;
+      }
+      try {
+        cache.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        cache.ctx.clearRect(0, 0, width, height);
+        cache.ctx.drawImage(src, 0, 0, width, height);
+      } catch {
+        return false;
+      }
+      cache.width = width;
+      cache.height = height;
+      cache.updatedAt = Date.now();
+      return true;
+    }
+
+    _getStageFrameCanvas() {
+      const cache = this._stageFrameCache;
+      if (!cache?.canvas || !cache.width || !cache.height || !cache.updatedAt) return null;
+      return cache.canvas;
+    }
+
     _getStageCanvas() {
       const renderer = Scratch?.vm?.runtime?.renderer;
-      return renderer?._gl?.canvas || renderer?.canvas || document.querySelector('canvas[class*="stage"], canvas');
+      const canvas = renderer?._gl?.canvas || renderer?.canvas;
+      if (canvas) return canvas;
+      return document.querySelector('canvas[class*="stage"]:not(.dp-stage-canvas)');
     }
 
     _drawStage(widget) {
       const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
-      const src = this._getStageCanvas();
+      const src = this._getStageFrameCanvas();
       const r = c.getBoundingClientRect();
       const cssW = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(r.width || 2)));
       const cssH = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(r.height || 2)));
@@ -1146,6 +1233,7 @@
 
     _stageLoop() {
       if (this._disposed) return;
+      this._ensureStageFrameCacheHook();
       for (const id in this.dashboards) {
         const d = this.dashboards[id];
         if (!d.container || d.container.style.display === 'none') continue;
@@ -1278,6 +1366,7 @@
     destroy() {
       this._disposed = true;
       cancelAnimationFrame(this._raf);
+      this._removeStageFrameCacheHook();
       for (const id in this.dashboards) this.destroyDashboard({ DASH_ID: id });
     }
   }
