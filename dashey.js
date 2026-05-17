@@ -17,6 +17,14 @@
   const OFFSCREEN_LIMIT = 10000;
   const MAX_CANVAS_DIMENSION = 4096;
   const STAGE_POPUP_FRAME_INTERVAL = 1000 / 24;
+  const BRIDGE_SOURCE = 'dashey';
+  const BRIDGE_VERSION = 1;
+  const BASIC_POPUP_WIDGET_TYPES = [
+    'text', 'metric.number', 'badge', 'control.button', 'button', 'control.slider', 'slider', 'control.toggle', 'toggle',
+    'html', 'markdown', 'image', 'log'
+  ];
+  const LIVE_POPUP_WIDGET_TYPES = ['chart.line', 'chart.bar', 'chart.multi', 'table.grid', 'iframe', 'stage', 'stage.expand'];
+  const POPUP_WIDGET_TYPES = new Set([...BASIC_POPUP_WIDGET_TYPES, ...LIVE_POPUP_WIDGET_TYPES]);
 
   const LOGO_SVG = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160.15225" height="160.15225" viewBox="0,0,160.15225,160.15225"><defs><linearGradient x1="249.4437" y1="157.32369" x2="258.8874" y2="157.32369" gradientUnits="userSpaceOnUse" id="color-1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ffde00"/></linearGradient></defs><g transform="translate(-159.92388,-99.92387)"><g stroke-miterlimit="10"><path d="M174.92388,257.57613c-6.90356,0 -12.5,-5.59644 -12.5,-12.5v-130.15225c0,-6.90356 5.59644,-12.5 12.5,-12.5h130.15225c6.90356,0 12.5,5.59644 12.5,12.5v130.15225c0,6.90356 -5.59644,12.5 -12.5,12.5z" fill="#ffffff" stroke="#000000" stroke-width="5" stroke-linecap="butt"/><path d="M163.07952,130.49673h152.31777" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round"/><path d="M292.245,109.19128l14.6225,14.62251" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M306.8675,109.19128l-14.6225,14.6225" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M245.63576,123.66147h14.01324" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M268.67879,124.27074c-0.27614,0 -0.5,-0.22386 -0.5,-0.5v-14.53641c0,-0.27614 0.22386,-0.5 0.5,-0.5h14.53641c0.27614,0 0.5,0.22386 0.5,0.5v14.53641c0,0.27614 -0.22386,0.5 -0.5,0.5z" fill="#f5f8fa" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M174.47687,169.81375c-2.76142,0 -5,-2.23858 -5,-5v-22.29137c0,-2.76142 2.23858,-5 5,-5h52.75492c2.76142,0 5,2.23858 5,5v22.29137c0,2.76142 -2.23858,5 -5,5z" fill="#ff0000" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M246.82781,169.20448c-2.76142,0 -5,-2.23858 -5,-5v-21.6821c0,-2.76142 2.23858,-5 5,-5h20.15892c2.76142,0 5,2.23858 5,5v21.6821c0,2.76142 -2.23858,5 -5,5z" fill="#1d00ff" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><g fill="none" stroke-width="3.75" stroke-linecap="round"><path d="M249.4437,157.32369h14.92714" stroke="#ffffff"/><path d="M249.4437,157.32369h9.4437" stroke="url(#color-1)"/></g><text transform="translate(250.35761,153.79052) scale(0.30623,0.30623)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">15</tspan></text><text transform="translate(171.58436,159.43682) scale(0.5,0.5)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">test :3</tspan></text></g></g></svg><!--rotationCenter:80.07612499999999:80.076125-->';
   const LOGO_URI = `data:image/svg+xml,${encodeURIComponent(LOGO_SVG)}`;
@@ -296,6 +304,7 @@
         .dp-resize { position: absolute; width: 18px; height: 18px; touch-action: none; right: 0; bottom: 0; cursor: nwse-resize; background: transparent; }
         .dp-resize::after { content: ''; position: absolute; right: 2px; bottom: 2px; width: 7px; height: 7px; border-right: 2px solid rgba(255,255,255,0.7); border-bottom: 2px solid rgba(255,255,255,0.7); }
         .dp-inspector { font-family: monospace; font-size: 12px; white-space: pre-wrap; }
+        .dp-unsupported { height: 100%; display: flex; align-items: center; justify-content: center; text-align: center; padding: 14px; border: 1px dashed var(--dp-border); border-radius: 8px; color: var(--dp-fg); opacity: 0.72; font-size: 13px; line-height: 1.35; box-sizing: border-box; }
       `;
       this._styleText = style.textContent;
       document.head.appendChild(style);
@@ -311,7 +320,7 @@
         window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', hostMode: 'inline', hostType: 'inline', pinned: false, alwaysOnTop: false },
         security: { defaultMode: 'safe' },
         state: { minimized: false, maximized: false, prevWindow: null, debug: false, modal: false },
-        host: null, shadow: null, popup: null, popupRoot: null, container: null, header: null, body: null, grid: null, dirty: false
+        host: null, shadow: null, popup: null, popupWindow: null, popupRoot: null, container: null, header: null, body: null, grid: null, dirty: false, bridge: null
       };
     }
 
@@ -445,6 +454,7 @@
       if (!dash?.popup) return;
       try { if (!dash.popup.closed) dash.popup.close(); } catch {}
       dash.popup = null;
+      dash.popupWindow = null;
       dash.popupRoot = null;
     }
 
@@ -472,6 +482,7 @@
       dash.permissionPrompt = null;
       dash._popupMessageCleanup = null;
       dash._popupStageTransport = null;
+      dash.bridge = null;
       dash.cleanupDrag = null;
       dash.cleanupResize = null;
       if (options.resetWidgets) this._resetWidgetDom(dash);
@@ -487,11 +498,65 @@
       dash._activeHostType = null;
     }
 
-    _postDashboardModel(dash) {
-      if (!this._isPopupOpen(dash)) return;
+    _bridgeMessage(type, dash, payload = {}) {
+      return { source: BRIDGE_SOURCE, version: BRIDGE_VERSION, type, dashId: dash?.id || '', payload };
+    }
+
+    _isBridgeMessage(data) {
+      return data?.source === BRIDGE_SOURCE && data.version === BRIDGE_VERSION && typeof data.type === 'string';
+    }
+
+    _ensureDashboardBridge(dash) {
+      if (!dash) return null;
+      if (dash.bridge) return dash.bridge;
+      dash.bridge = {
+        post: (type, payload = {}, transfer) => this._postToPopup(dash, type, payload, transfer),
+        emitFromPopup: (type, payload = {}) => this._sendPopupEvent(dash, type, payload)
+      };
+      return dash.bridge;
+    }
+
+    _postToPopup(dash, type, payload = {}, transfer) {
+      if (!this._isPopupOpen(dash)) return false;
       try {
-        dash.popup.postMessage({ type: 'dashey:model', dashId: dash.id, dashboard: this._serializeDashboard(dash) }, '*');
+        const message = this._bridgeMessage(type, dash, payload);
+        if (transfer) dash.popup.postMessage(message, '*', transfer);
+        else dash.popup.postMessage(message, '*');
+        return true;
       } catch {}
+      return false;
+    }
+
+    _postDashboardModel(dash, type = 'dashboard.updated', payload = {}) {
+      if (!this._isPopupOpen(dash)) return;
+      this._ensureDashboardBridge(dash)?.post(type, { ...payload, dashboard: this._serializeDashboard(dash) });
+    }
+
+    _sendPopupEvent(dash, type, payload = {}) {
+      if (!this._isPopupOpen(dash)) return false;
+      try {
+        const sender = dash.popup?.dasheyPopupBridge?.send;
+        if (typeof sender === 'function') {
+          sender(type, dash.id, payload);
+          return true;
+        }
+      } catch {}
+      return false;
+    }
+
+    _handlePopupBridgeMessage(dash, event) {
+      if (!dash || event.source !== dash.popupWindow) return;
+      const data = event.data || {};
+      if (!this._isBridgeMessage(data) || data.dashId !== dash.id) return;
+      const payload = isObj(data.payload) ? data.payload : {};
+      if (data.type === 'widget.clicked' || data.type === 'widget.hovered' || data.type === 'widget.changed' || data.type === 'dashboard.moved' || data.type === 'dashboard.resized' || data.type === 'dashboard.pagechanged') {
+        this._emit(data.type, dash, { ...payload, source: payload.source || 'popup' });
+      }
+    }
+
+    _emitInteraction(type, dash, payload = {}) {
+      if (this._getActiveHostType(dash) === 'popup' && this._sendPopupEvent(dash, type, payload)) return;
+      this._emit(type, dash, payload);
     }
 
 
@@ -699,6 +764,13 @@
         doc.close();
         const root = doc.getElementById('dashey-popup-root');
         if (!root) throw new Error('Popup root was not created.');
+        popup.dasheyPopupBridge = new popup.Function('source', 'version', `
+          return {
+            send(type, dashId, payload = {}) {
+              try { window.opener && window.opener.postMessage({ source, version, type, dashId, payload }, '*'); } catch (e) {}
+            }
+          };
+        `)(BRIDGE_SOURCE, BRIDGE_VERSION);
         const container = doc.createElement('div');
         container.className = 'dp-window';
         root.appendChild(container);
@@ -796,19 +868,25 @@
           }
         };
         const onMessage = event => {
-          const data = event.data || {};
-          if (data.dashId !== dash.id) return;
-          if (data.type === 'dashey:model') {
+          const message = event.data || {};
+          if (!this._isBridgeMessage(message) || message.dashId !== dash.id) return;
+          const data = isObj(message.payload) ? message.payload : {};
+          if (message.type === 'dashboard.updated' || message.type === 'dashboard.title' || message.type === 'dashboard.window' || message.type === 'dashboard.theme' || message.type === 'dashboard.layout' || message.type === 'widget.added' || message.type === 'widget.removed' || message.type === 'widget.updated') {
             root.dataset.modelUpdatedAt = String(Date.now());
             if (data.dashboard?.title) doc.title = data.dashboard.title;
-          } else if (data.type === 'dashey:stage-frame') {
+          } else if (message.type === 'stage.frame') {
             renderStageFrame(data);
           }
         };
+        const onPopupMessage = event => this._handlePopupBridgeMessage(dash, event);
         popup.addEventListener('message', onMessage);
+        window.addEventListener('message', onPopupMessage);
         popup.addEventListener('beforeunload', () => {
           if (dash.popup === popup) {
+            try { if (dash._popupMessageCleanup) dash._popupMessageCleanup(); } catch {}
+            dash._popupMessageCleanup = null;
             dash.popup = null;
+            dash.popupWindow = null;
             dash.popupRoot = null;
             dash.container = null;
             dash.header = null;
@@ -820,11 +898,13 @@
           }
         });
         dash.popup = popup;
+        dash.popupWindow = popup;
         dash.popupRoot = root;
         dash.container = container;
         dash.host = root;
         dash.shadow = null;
-        dash._popupMessageCleanup = () => popup.removeEventListener('message', onMessage);
+        this._ensureDashboardBridge(dash);
+        dash._popupMessageCleanup = () => { popup.removeEventListener('message', onMessage); window.removeEventListener('message', onPopupMessage); };
         dash._activeHostType = 'popup';
         dash.window.hostType = 'popup';
         this._finishHostAndWindow(dash);
@@ -833,6 +913,7 @@
         console.warn('[Dashey] Popup host failed; falling back to inline dashboard host.', e);
         try { popup.close(); } catch {}
         dash.popup = null;
+        dash.popupWindow = null;
         dash.popupRoot = null;
         return false;
       }
@@ -897,7 +978,7 @@
         dash.window.y = clamp(state.y + (e.clientY - state.sy), bounds.minY, bounds.maxY);
         dash.container.style.left = `${dash.window.x}px`;
         dash.container.style.top = `${dash.window.y}px`;
-        this._emit('dashboard.moved', dash, { x: dash.window.x, y: dash.window.y });
+        this._emitInteraction('dashboard.moved', dash, { x: dash.window.x, y: dash.window.y });
       };
       const up = e => {
         if (!state.dragging || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
@@ -952,6 +1033,7 @@
         dash.window.height = ht;
         dash.container.style.width = `${w}px`;
         dash.container.style.height = `${ht}px`;
+        this._emitInteraction('dashboard.resized', dash, { width: w, height: ht });
       };
       const up = e => {
         if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
@@ -976,11 +1058,11 @@
       };
     }
 
-    _buildCard(widget, title) {
-      const card = document.createElement('div'); card.className = 'dp-card'; card.dataset.widgetId = widget.id;
-      const label = document.createElement('div'); label.className = 'dp-label'; label.textContent = title || '';
-      const content = document.createElement('div'); content.className = 'dp-content'; content.style.width = '100%'; content.style.height = 'calc(100% - 20px)'; content.style.minHeight = '0'; content.style.overflow = 'hidden';
-      const resize = document.createElement('div'); resize.className = 'dp-resize';
+    _buildCard(widget, title, doc = document) {
+      const card = doc.createElement('div'); card.className = 'dp-card'; card.dataset.widgetId = widget.id;
+      const label = doc.createElement('div'); label.className = 'dp-label'; label.textContent = title || '';
+      const content = doc.createElement('div'); content.className = 'dp-content'; content.style.width = '100%'; content.style.height = 'calc(100% - 20px)'; content.style.minHeight = '0'; content.style.overflow = 'hidden';
+      const resize = doc.createElement('div'); resize.className = 'dp-resize';
       card.append(label, content, resize);
       return { card, label, content, resize };
     }
@@ -988,8 +1070,8 @@
     _wireWidget(dash, widget) {
       const hostWindow = this._getHostWindow(dash);
       this._applyWidgetPermissions(widget);
-      widget.card.addEventListener('mouseenter', () => this._emit('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
-      widget.card.addEventListener('click', () => this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
+      widget.card.addEventListener('mouseenter', () => this._emitInteraction('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
+      widget.card.addEventListener('click', () => this._emitInteraction('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
 
       const moveState = { active: false, pointerId: null, sx: 0, sy: 0, x: 0, y: 0 };
       const startMove = e => {
@@ -1018,7 +1100,7 @@
         widget.position.y = y;
         widget.card.style.left = `${x}px`;
         widget.card.style.top = `${y}px`;
-        this._emit('widget.dragged', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), source: 'user' });
+        this._emitInteraction('widget.dragged', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), source: 'user' });
       };
       const endMove = e => {
         if (!moveState.active || (moveState.pointerId !== null && e.pointerId !== moveState.pointerId)) return;
@@ -1074,7 +1156,7 @@
             widget.card.style.gridColumn = `span ${gw}`;
             widget.card.style.gridRow = `span ${gh}`;
           }
-          this._emit('widget.resized', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), width: w, height: h, source: 'user' });
+          this._emitInteraction('widget.resized', dash, { widgetId: widget.id, value: widget.value, position: clone(widget.position), width: w, height: h, source: 'user' });
         };
         const endResize = e => {
           if (!s.d || (s.pointerId !== null && e.pointerId !== s.pointerId)) return;
@@ -1107,21 +1189,40 @@
       }
     }
 
+    _isPopupWidgetSupported(type) {
+      return POPUP_WIDGET_TYPES.has(String(type));
+    }
+
+    _renderUnsupportedPopupWidget(widget, doc) {
+      const notice = doc.createElement('div');
+      notice.className = 'dp-unsupported';
+      notice.textContent = 'This widget is not supported in popup mode yet.';
+      widget.content.appendChild(notice);
+      widget.dom.unsupported = notice;
+    }
+
     _createWidgetDom(dash, widget, title, rawValue) {
       const t = widget.type;
-      const built = this._buildCard(widget, title);
+      const doc = dash?.container?.ownerDocument || document;
+      const built = this._buildCard(widget, title, doc);
       widget.card = built.card; widget.content = built.content; widget.label = built.label; widget.resizeHandle = built.resize;
       const c = widget.content;
       const data = rawValue;
       const center = () => c.classList.add('dp-center');
+      if (this._getActiveHostType(dash) === 'popup' && !this._isPopupWidgetSupported(t)) {
+        this._renderUnsupportedPopupWidget(widget, doc);
+        this._wireWidget(dash, widget);
+        this._applyWidgetStyle(widget);
+        return widget;
+      }
       if (t === 'text') {
-        center(); const el = document.createElement('div'); el.className = 'dp-text'; el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.text = el;
+        center(); const el = doc.createElement('div'); el.className = 'dp-text'; el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.text = el;
       } else if (t === 'metric.number') {
-        center(); const el = document.createElement('div'); el.className = 'dp-metric'; el.textContent = String(data?.value ?? data ?? '0'); c.appendChild(el); widget.dom.text = el;
+        center(); const el = doc.createElement('div'); el.className = 'dp-metric'; el.textContent = String(data?.value ?? data ?? '0'); c.appendChild(el); widget.dom.text = el;
       } else if (t === 'badge') {
-        center(); const el = document.createElement('span'); el.className = 'dp-badge'; el.textContent = String(data?.label ?? data ?? 'Badge'); if (data?.color) el.style.background = data.color; c.appendChild(el); widget.dom.badge = el;
+        center(); const el = doc.createElement('span'); el.className = 'dp-badge'; el.textContent = String(data?.label ?? data ?? 'Badge'); if (data?.color) el.style.background = data.color; c.appendChild(el); widget.dom.badge = el;
       } else if (t === 'clock') {
-        center(); const el = document.createElement('div'); el.className = 'dp-clock'; c.appendChild(el); widget.dom.text = el; widget._needsClock = true;
+        center(); const el = doc.createElement('div'); el.className = 'dp-clock'; c.appendChild(el); widget.dom.text = el; widget._needsClock = true;
       } else if (t === 'spacer') {
         widget.label.style.display = 'none'; c.style.height = '100%';
       } else if (t === 'progress.bar') {
@@ -1129,50 +1230,50 @@
       } else if (t === 'ring.chart') {
         center(); const r = 26, circ = 2 * Math.PI * r; c.innerHTML = `<div class="dp-ring"><svg width="64" height="64" viewBox="0 0 60 60"><circle cx="30" cy="30" r="${r}" fill="none" stroke="rgba(255,255,255,0.1)" stroke-width="6"></circle><circle class="dp-ring-fill" cx="30" cy="30" r="${r}" fill="none" stroke="var(--dp-accent)" stroke-linecap="round" stroke-width="6" stroke-dasharray="${circ}" stroke-dashoffset="${circ}"></circle></svg><div class="dp-ring-text">0%</div></div>`; widget.dom.ring = c.querySelector('.dp-ring-fill'); widget.dom.text = c.querySelector('.dp-ring-text');
       } else if (t === 'gauge.meter') {
-        center(); const meter = document.createElement('meter'); meter.className = 'dp-gauge'; meter.min = 0; meter.max = 100; meter.value = clamp(num(data?.value ?? data, 0), 0, 100); c.appendChild(meter); widget.dom.meter = meter;
+        center(); const meter = doc.createElement('meter'); meter.className = 'dp-gauge'; meter.min = 0; meter.max = 100; meter.value = clamp(num(data?.value ?? data, 0), 0, 100); c.appendChild(meter); widget.dom.meter = meter;
       } else if (t === 'status.light') {
-        center(); const el = document.createElement('div'); el.className = 'dp-status'; el.style.color = String(data || '#00d2ff'); el.style.background = String(data || '#00d2ff'); c.appendChild(el); widget.dom.light = el;
+        center(); const el = doc.createElement('div'); el.className = 'dp-status'; el.style.color = String(data || '#00d2ff'); el.style.background = String(data || '#00d2ff'); c.appendChild(el); widget.dom.light = el;
       } else if (t === 'color.swatch') {
-        const el = document.createElement('div'); el.className = 'dp-swatch'; el.style.background = String(data?.color ?? data ?? '#00d2ff'); c.appendChild(el); widget.dom.swatch = el;
+        const el = doc.createElement('div'); el.className = 'dp-swatch'; el.style.background = String(data?.color ?? data ?? '#00d2ff'); c.appendChild(el); widget.dom.swatch = el;
       } else if (t === 'image') {
-        const img = document.createElement('img'); img.className = 'dp-img'; img.src = String(data || ''); c.appendChild(img); widget.dom.img = img;
+        const img = doc.createElement('img'); img.className = 'dp-img'; img.src = String(data || ''); c.appendChild(img); widget.dom.img = img;
       } else if (t === 'iframe') {
-        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups'); fr.src = String(data || 'about:blank'); c.appendChild(fr); widget.dom.iframe = fr;
+        const fr = doc.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-scripts allow-forms allow-same-origin allow-popups'); fr.src = String(data || 'about:blank'); c.appendChild(fr); widget.dom.iframe = fr;
       } else if (t === 'html') {
-        const fr = document.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-same-origin'); fr.srcdoc = sanitizeHTML(String(data || '')); c.appendChild(fr); widget.dom.iframe = fr;
+        const fr = doc.createElement('iframe'); fr.className = 'dp-iframe'; fr.setAttribute('sandbox', 'allow-same-origin'); fr.srcdoc = sanitizeHTML(String(data || '')); c.appendChild(fr); widget.dom.iframe = fr;
       } else if (t === 'markdown') {
-        const el = document.createElement('div'); el.className = 'dp-markdown'; el.innerHTML = sanitizeHTML(String(data ?? '').replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')); c.appendChild(el); widget.dom.markdown = el;
+        const el = doc.createElement('div'); el.className = 'dp-markdown'; el.innerHTML = sanitizeHTML(String(data ?? '').replace(/^### (.*)$/gm, '<h3>$1</h3>').replace(/^## (.*)$/gm, '<h2>$1</h2>').replace(/^# (.*)$/gm, '<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>')); c.appendChild(el); widget.dom.markdown = el;
       } else if (t === 'audio') {
-        const a = document.createElement('audio'); a.controls = true; a.className = 'dp-audio'; a.src = String(data || ''); c.appendChild(a); widget.dom.audio = a;
+        const a = doc.createElement('audio'); a.controls = true; a.className = 'dp-audio'; a.src = String(data || ''); c.appendChild(a); widget.dom.audio = a;
       } else if (t === 'log') {
-        const pre = document.createElement('pre'); pre.className = 'dp-log'; pre.textContent = Array.isArray(data?.lines) ? data.lines.join('\n') : String(data || '') + '\n'; c.appendChild(pre); widget.dom.log = pre;
+        const pre = doc.createElement('pre'); pre.className = 'dp-log'; pre.textContent = Array.isArray(data?.lines) ? data.lines.join('\n') : String(data || '') + '\n'; c.appendChild(pre); widget.dom.log = pre;
       } else if (t === 'chart.line' || t === 'chart.bar' || t === 'chart.multi') {
-        const cvs = document.createElement('canvas'); cvs.style.width = '100%'; cvs.style.height = '100%'; cvs.style.borderRadius = '8px'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsChartRedraw = true;
+        const cvs = doc.createElement('canvas'); cvs.style.width = '100%'; cvs.style.height = '100%'; cvs.style.borderRadius = '8px'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsChartRedraw = true;
       } else if (t === 'table.grid') {
-        const wrap = document.createElement('div'); wrap.style.height = '100%'; wrap.style.overflow = 'auto'; c.appendChild(wrap); widget.dom.tableWrap = wrap; widget._needsTableRedraw = true;
-      } else if (t === 'control.button') {
-        const btn = document.createElement('button'); btn.className = 'dp-button'; btn.textContent = data?.label || title || 'Button'; btn.onclick = () => { this._setWidgetValue(dash, widget, data?.value ?? btn.textContent, 'ui'); this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }); }; c.appendChild(btn); widget.dom.button = btn;
+        const wrap = doc.createElement('div'); wrap.style.height = '100%'; wrap.style.overflow = 'auto'; c.appendChild(wrap); widget.dom.tableWrap = wrap; widget._needsTableRedraw = true;
+      } else if (t === 'control.button' || t === 'button') {
+        const btn = doc.createElement('button'); btn.className = 'dp-button'; btn.textContent = data?.label || title || 'Button'; btn.onclick = () => { this._setWidgetValue(dash, widget, data?.value ?? btn.textContent, 'ui'); this._emitInteraction('widget.clicked', dash, { widgetId: widget.id, value: widget.value }); }; c.appendChild(btn); widget.dom.button = btn;
       } else if (t === 'control.input') {
-        const inp = document.createElement('input'); inp.className = 'dp-input'; inp.type = data?.inputType === 'number' ? 'number' : 'text'; inp.value = String(data?.value ?? data ?? ''); inp.placeholder = data?.placeholder || ''; inp.oninput = () => this._setWidgetValue(dash, widget, inp.value, 'ui'); c.appendChild(inp); widget.dom.input = inp; widget.inputEl = inp;
-      } else if (t === 'control.toggle') {
-        const wrap = document.createElement('div'); wrap.className = 'dp-toggle-wrap'; const track = document.createElement('div'); track.className = 'dp-toggle'; const thumb = document.createElement('div'); thumb.className = 'dp-toggle-thumb'; track.appendChild(thumb); const label = document.createElement('span'); const on = !!(data?.value ?? data); if (on) track.classList.add('dp-toggle-on'); label.textContent = on ? (data?.onLabel || 'On') : (data?.offLabel || 'Off'); wrap.append(track, label); wrap.onclick = () => this._setWidgetValue(dash, widget, { ...(isObj(widget.value) ? widget.value : {}), value: !(widget.value?.value ?? widget.value) }, 'ui'); c.appendChild(wrap); widget.dom.toggle = track; widget.dom.toggleLabel = label;
-      } else if (t === 'control.slider') {
-        const input = document.createElement('input'); input.className = 'dp-slider'; input.type = 'range'; input.min = data?.min ?? 0; input.max = data?.max ?? 100; input.step = data?.step ?? 1; input.value = data?.value ?? 0; const text = document.createElement('div'); text.style.cssText = 'text-align:right;font-size:12px;font-weight:700'; text.textContent = input.value; input.oninput = () => { text.textContent = input.value; this._setWidgetValue(dash, widget, Number(input.value), 'ui'); }; c.append(input, text); widget.dom.input = input; widget.dom.text = text;
+        const inp = doc.createElement('input'); inp.className = 'dp-input'; inp.type = data?.inputType === 'number' ? 'number' : 'text'; inp.value = String(data?.value ?? data ?? ''); inp.placeholder = data?.placeholder || ''; inp.oninput = () => this._setWidgetValue(dash, widget, inp.value, 'ui'); c.appendChild(inp); widget.dom.input = inp; widget.inputEl = inp;
+      } else if (t === 'control.toggle' || t === 'toggle') {
+        const wrap = doc.createElement('div'); wrap.className = 'dp-toggle-wrap'; const track = doc.createElement('div'); track.className = 'dp-toggle'; const thumb = doc.createElement('div'); thumb.className = 'dp-toggle-thumb'; track.appendChild(thumb); const label = doc.createElement('span'); const on = !!(data?.value ?? data); if (on) track.classList.add('dp-toggle-on'); label.textContent = on ? (data?.onLabel || 'On') : (data?.offLabel || 'Off'); wrap.append(track, label); wrap.onclick = () => this._setWidgetValue(dash, widget, { ...(isObj(widget.value) ? widget.value : {}), value: !(widget.value?.value ?? widget.value) }, 'ui'); c.appendChild(wrap); widget.dom.toggle = track; widget.dom.toggleLabel = label;
+      } else if (t === 'control.slider' || t === 'slider') {
+        const input = doc.createElement('input'); input.className = 'dp-slider'; input.type = 'range'; input.min = data?.min ?? 0; input.max = data?.max ?? 100; input.step = data?.step ?? 1; input.value = data?.value ?? 0; const text = doc.createElement('div'); text.style.cssText = 'text-align:right;font-size:12px;font-weight:700'; text.textContent = input.value; input.oninput = () => { text.textContent = input.value; this._setWidgetValue(dash, widget, Number(input.value), 'ui'); }; c.append(input, text); widget.dom.input = input; widget.dom.text = text;
       } else if (t === 'control.select') {
-        const sel = document.createElement('select'); sel.className = 'dp-select'; (data?.options || []).forEach(opt => { const o = document.createElement('option'); o.textContent = opt.label ?? opt.value; o.value = String(opt.value); sel.appendChild(o); }); sel.value = String(data?.value ?? (data?.options?.[0]?.value ?? '')); sel.onchange = () => this._setWidgetValue(dash, widget, sel.value, 'ui'); c.appendChild(sel); widget.dom.select = sel;
+        const sel = doc.createElement('select'); sel.className = 'dp-select'; (data?.options || []).forEach(opt => { const o = doc.createElement('option'); o.textContent = opt.label ?? opt.value; o.value = String(opt.value); sel.appendChild(o); }); sel.value = String(data?.value ?? (data?.options?.[0]?.value ?? '')); sel.onchange = () => this._setWidgetValue(dash, widget, sel.value, 'ui'); c.appendChild(sel); widget.dom.select = sel;
       } else if (t === 'terminal.console') {
-        const term = document.createElement('div'); term.className = 'dp-terminal'; const out = document.createElement('div'); out.className = 'dp-terminal-output'; const inp = document.createElement('input'); inp.className = 'dp-terminal-input'; inp.placeholder = 'Type command and press Enter'; inp.onkeydown = e => { if (e.key === 'Enter') { const cmd = inp.value; inp.value = ''; out.textContent += `> ${cmd}\n`; this._setWidgetValue(dash, widget, cmd, 'ui'); } }; term.append(out, inp); c.appendChild(term); widget.dom.termOut = out; widget.dom.termIn = inp;
+        const term = doc.createElement('div'); term.className = 'dp-terminal'; const out = doc.createElement('div'); out.className = 'dp-terminal-output'; const inp = doc.createElement('input'); inp.className = 'dp-terminal-input'; inp.placeholder = 'Type command and press Enter'; inp.onkeydown = e => { if (e.key === 'Enter') { const cmd = inp.value; inp.value = ''; out.textContent += `> ${cmd}\n`; this._setWidgetValue(dash, widget, cmd, 'ui'); } }; term.append(out, inp); c.appendChild(term); widget.dom.termOut = out; widget.dom.termIn = inp;
       } else if (t === 'editor.code') {
-        const ta = document.createElement('textarea'); ta.className = 'dp-textarea'; ta.spellcheck = false; ta.value = String(data?.value ?? ''); ta.style.minHeight = '140px'; ta.style.fontFamily = 'monospace'; ta.oninput = () => this._setWidgetValue(dash, widget, ta.value, 'ui'); c.appendChild(ta); widget.dom.textarea = ta; widget.inputEl = ta;
+        const ta = doc.createElement('textarea'); ta.className = 'dp-textarea'; ta.spellcheck = false; ta.value = String(data?.value ?? ''); ta.style.minHeight = '140px'; ta.style.fontFamily = 'monospace'; ta.oninput = () => this._setWidgetValue(dash, widget, ta.value, 'ui'); c.appendChild(ta); widget.dom.textarea = ta; widget.inputEl = ta;
       } else if (t === 'viewer.minimap') {
-        const cvs = document.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
+        const cvs = doc.createElement('canvas'); cvs.className = 'dp-minimap'; cvs.width = 300; cvs.height = 180; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d'); widget._needsMiniRedraw = true;
       } else if (t === 'stage' || t === 'stage.expand') {
         widget.card.classList.add('dp-stage-card');
         widget.camera = this._normalizeStageCamera(widget.camera || data);
         this._applyVirtualStageId(widget, data);
-        const cvs = document.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
+        const cvs = doc.createElement('canvas'); cvs.className = 'dp-stage-canvas'; c.appendChild(cvs); widget.dom.canvas = cvs; widget.dom.ctx = cvs.getContext('2d');
       } else {
-        const el = document.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
+        const el = doc.createElement('div'); el.textContent = String(data ?? ''); c.appendChild(el); widget.dom.generic = el;
       }
       this._wireWidget(dash, widget);
       this._applyWidgetStyle(widget);
@@ -1198,7 +1299,7 @@
       widget.value = value;
       this._updateWidgetDom(widget, value);
       if (JSON.stringify(before) !== JSON.stringify(value)) {
-        this._emit('widget.changed', dash, { widgetId: widget.id, value, oldValue: before, source });
+        this._emitInteraction('widget.changed', dash, { widgetId: widget.id, value, oldValue: before, source });
         for (const b of dash.bindings) {
           if (b.widgetId !== widget.id) continue;
           if (b.dir === 'input') continue;
@@ -1233,10 +1334,10 @@
       else if (t === 'audio' && widget.dom.audio) widget.dom.audio.src = String(v || '');
       else if (t === 'log' && widget.dom.log) widget.dom.log.textContent = (Array.isArray(v?.lines) ? v.lines.join('\n') : String(v ?? '')) + '\n';
       else if ((t === 'list.items' || t === 'timeline') && widget.dom.list) { const items = Array.isArray(v?.items) ? v.items : Array.isArray(v) ? v : String(v ?? '').split(/[,\n]/).filter(Boolean); widget.dom.list.innerHTML = ''; items.forEach(item => { const li = document.createElement('li'); li.textContent = String(item?.label ?? item); widget.dom.list.appendChild(li); }); }
-      else if (t === 'control.button' && widget.dom.button) widget.dom.button.textContent = v?.label || widget.title || 'Button';
+      else if ((t === 'control.button' || t === 'button') && widget.dom.button) widget.dom.button.textContent = v?.label || widget.title || 'Button';
       else if (t === 'control.input' && widget.dom.input) widget.dom.input.value = String(v ?? '');
-      else if (t === 'control.toggle' && widget.dom.toggle) { const on = !!(v?.value ?? v); widget.dom.toggle.classList.toggle('dp-toggle-on', on); if (widget.dom.toggleLabel) widget.dom.toggleLabel.textContent = on ? (v?.onLabel || 'On') : (v?.offLabel || 'Off'); }
-      else if (t === 'control.slider' && widget.dom.input) { widget.dom.input.value = String(v ?? 0); if (widget.dom.text) widget.dom.text.textContent = String(v ?? 0); }
+      else if ((t === 'control.toggle' || t === 'toggle') && widget.dom.toggle) { const on = !!(v?.value ?? v); widget.dom.toggle.classList.toggle('dp-toggle-on', on); if (widget.dom.toggleLabel) widget.dom.toggleLabel.textContent = on ? (v?.onLabel || 'On') : (v?.offLabel || 'Off'); }
+      else if ((t === 'control.slider' || t === 'slider') && widget.dom.input) { widget.dom.input.value = String(v ?? 0); if (widget.dom.text) widget.dom.text.textContent = String(v ?? 0); }
       else if (t === 'control.select' && widget.dom.select) widget.dom.select.value = String(v ?? '');
       else if (t === 'terminal.console' && widget.dom.termOut) widget.dom.termOut.textContent += `${String(v)}\n`;
       else if (t === 'editor.code' && widget.dom.textarea) widget.dom.textarea.value = String(v ?? '');
@@ -1489,11 +1590,12 @@
     _drawTable(widget) {
       const wrap = widget.dom.tableWrap; if (!wrap) return; wrap.innerHTML = '';
       const d = widget.value || {}; const cols = Array.isArray(d.columns) ? d.columns : []; const rows = Array.isArray(d.rows) ? d.rows : [];
-      const table = document.createElement('table'); table.className = 'dp-table';
-      const thead = document.createElement('thead'); const tr = document.createElement('tr');
-      cols.forEach(col => { const th = document.createElement('th'); th.textContent = col.label || col.key || ''; th.onclick = () => { rows.sort((a, b) => String(a[col.key] ?? '').localeCompare(String(b[col.key] ?? ''))); this._setWidgetValue(this._findDashOfWidget(widget.id), widget, { ...d, rows }, 'sort'); }; tr.appendChild(th); });
+      const doc = wrap.ownerDocument || document;
+      const table = doc.createElement('table'); table.className = 'dp-table';
+      const thead = doc.createElement('thead'); const tr = doc.createElement('tr');
+      cols.forEach(col => { const th = doc.createElement('th'); th.textContent = col.label || col.key || ''; th.onclick = () => { rows.sort((a, b) => String(a[col.key] ?? '').localeCompare(String(b[col.key] ?? ''))); this._setWidgetValue(this._findDashOfWidget(widget.id), widget, { ...d, rows }, 'sort'); }; tr.appendChild(th); });
       thead.appendChild(tr); table.appendChild(thead);
-      const tbody = document.createElement('tbody'); rows.forEach((row, idx) => { const tr2 = document.createElement('tr'); tr2.onclick = () => this._emit('widget.clicked', this._findDashOfWidget(widget.id), { widgetId: widget.id, value: row, rowIndex: idx }); cols.forEach(col => { const td = document.createElement('td'); td.textContent = String(row[col.key] ?? ''); tr2.appendChild(td); }); tbody.appendChild(tr2); });
+      const tbody = doc.createElement('tbody'); rows.forEach((row, idx) => { const tr2 = doc.createElement('tr'); tr2.onclick = () => this._emitInteraction('widget.clicked', this._findDashOfWidget(widget.id), { widgetId: widget.id, value: row, rowIndex: idx }); cols.forEach(col => { const td = doc.createElement('td'); td.textContent = String(row[col.key] ?? ''); tr2.appendChild(td); }); tbody.appendChild(tr2); });
       table.appendChild(tbody); wrap.appendChild(table);
     }
 
@@ -1624,8 +1726,6 @@
       const transport = dash._popupStageTransport;
       transport.sequence += 1;
       return {
-        type: 'dashey:stage-frame',
-        dashId: dash.id,
         sequence: transport.sequence,
         frameKind,
         frame,
@@ -1656,7 +1756,7 @@
       const postFrame = (frame, frameKind, transfer = []) => {
         try {
           const payload = this._makePopupStageFramePayload(dash, widgets, frame, frameKind, src.width, src.height);
-          dash.popup.postMessage(payload, '*', transfer);
+          this._ensureDashboardBridge(dash)?.post('stage.frame', payload, transfer);
         } catch {}
       };
       if (typeof createImageBitmap === 'function') {
@@ -1675,7 +1775,7 @@
       const finish = (frame, frameKind) => {
         try {
           const payload = this._makePopupStageFramePayload(dash, widgets, frame, frameKind, src.width, src.height);
-          dash.popup.postMessage(payload, '*');
+          this._ensureDashboardBridge(dash)?.post('stage.frame', payload);
         } catch {}
       };
       if (typeof src.toBlob === 'function') {
@@ -1692,7 +1792,7 @@
       try {
         const dataURL = src.toDataURL('image/webp', 0.75);
         const payload = this._makePopupStageFramePayload(dash, widgets, dataURL, 'dataURL', src.width, src.height);
-        dash.popup.postMessage(payload, '*');
+        this._ensureDashboardBridge(dash)?.post('stage.frame', payload);
       } catch {}
     }
 
@@ -1791,11 +1891,11 @@
     showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); if (!d.container) return; d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
     hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.minimized = true; if (this._getActiveHostType(d) === 'popup') this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); else if (d.container) d.container.style.display = 'none'; this._savePersisted(); }
     destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); delete this.dashboards[d.id]; this._savePersisted(); }
-    setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; if (this._isPopupOpen(d)) { try { d.popup.document.title = d.title; } catch {} this._postDashboardModel(d); } this._savePersisted(); }
-    setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) this._renderDashboardFromModel(d); this._markDirty(d); this._savePersisted(); }
-    setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const name = String(args.THEME); if (name !== 'custom') d.theme = clone(this.themes[name] || this.themes.dark); else d.theme = d.theme || clone(DEFAULT_THEME); this._applyTheme(d); this._savePersisted(); }
-    setDashboardColor(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme.vars['--dp-bg'] = String(args.BG); d.theme.vars['--dp-fg'] = String(args.FG); d.theme.vars['--dp-accent'] = String(args.ACC); this._applyTheme(d); this._savePersisted(); }
-    setDashboardWindow(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.window.mode = 'windowed'; d.window.x = num(args.X, d.window.x); d.window.y = num(args.Y, d.window.y); d.window.width = num(args.W, d.window.width); d.window.height = num(args.H, d.window.height); this._syncWindowStyles(d); this._savePersisted(); }
+    setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; if (this._isPopupOpen(d)) { try { d.popup.document.title = d.title; } catch {} this._postDashboardModel(d, 'dashboard.title', { title: d.title }); } this._savePersisted(); }
+    setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) this._renderDashboardFromModel(d); this._postDashboardModel(d, 'dashboard.layout', { layout: clone(d.layout) }); this._markDirty(d); this._savePersisted(); }
+    setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const name = String(args.THEME); if (name !== 'custom') d.theme = clone(this.themes[name] || this.themes.dark); else d.theme = d.theme || clone(DEFAULT_THEME); this._applyTheme(d); this._postDashboardModel(d, 'dashboard.theme', { theme: clone(d.theme) }); this._savePersisted(); }
+    setDashboardColor(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme.vars['--dp-bg'] = String(args.BG); d.theme.vars['--dp-fg'] = String(args.FG); d.theme.vars['--dp-accent'] = String(args.ACC); this._applyTheme(d); this._postDashboardModel(d, 'dashboard.theme', { theme: clone(d.theme) }); this._savePersisted(); }
+    setDashboardWindow(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.window.mode = 'windowed'; d.window.x = num(args.X, d.window.x); d.window.y = num(args.Y, d.window.y); d.window.width = num(args.W, d.window.width); d.window.height = num(args.H, d.window.height); this._syncWindowStyles(d); this._postDashboardModel(d, 'dashboard.window', { window: clone(d.window) }); this._savePersisted(); }
     setWindowMode(args) {
       const d = this._getDash(args.DASH_ID);
       if (!d) return;
@@ -1814,6 +1914,7 @@
       d.container.style.display = mode === 'minimized' ? 'none' : 'flex';
       this._bringToFront(d);
       this._syncWindowStyles(d);
+      this._postDashboardModel(d, 'dashboard.window', { window: clone(d.window) });
       this._markDirty(d);
       this._savePersisted();
     }
@@ -1828,6 +1929,7 @@
       if (d.container) d.container.style.display = d.state.minimized ? 'none' : 'flex';
       this._bringToFront(d);
       this._syncWindowStyles(d);
+      this._postDashboardModel(d, 'dashboard.window', { window: clone(d.window) });
       this._markDirty(d);
       this._savePersisted();
     }
@@ -1837,13 +1939,13 @@
       const t = String(args.TYPE), title = String(args.TITLE || id), raw = this._sanitizeValue(t, args.VALUE);
       const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: d.layout.mode === 'freeform' ? 180 : 3, h: d.layout.mode === 'freeform' ? 120 : 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, permissions: { move: 'both', resize: 'both' }, camera: this._normalizeStageCamera(raw), fullscreen: false, dom: {}, card: null, content: null, resizeHandle: null };
       if (this._isStageWidget(w)) this._applyVirtualStageId(w, raw);
-      d.widgets[id] = w; if (d.grid) { this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
+      d.widgets[id] = w; if (d.grid) { this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } d.pages[0].widgets.push(id); this._postDashboardModel(d, 'widget.added', { widget: this._serializeWidget(w) }); this._savePersisted(); this._markDirty(d);
     }
     _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap', 'metric.number', 'badge', 'gauge.meter', 'color.swatch', 'list.items', 'timeline', 'clock', 'stage', 'stage.expand'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
-    updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._savePersisted(); }
-    appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._savePersisted(); }
-    setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._savePersisted(); }
-    setWidgetInteraction(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.permissions = { move: normalizeInteractionMode(args.MOVE), resize: normalizeInteractionMode(args.RESIZE) }; this._applyWidgetPermissions(w); this._savePersisted(); }
+    updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
+    appendLog(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || w.type !== 'log') return; const lines = Array.isArray(w.value?.lines) ? w.value.lines.slice() : []; lines.push(String(args.VALUE)); this._setWidgetValue(d, w, { lines }, 'code'); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
+    setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
+    setWidgetInteraction(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.permissions = { move: normalizeInteractionMode(args.MOVE), resize: normalizeInteractionMode(args.RESIZE) }; this._applyWidgetPermissions(w); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
     setWidgetFullscreen(args) {
       const d = this._getDash(args.DASH_ID);
       if (!d) return;
@@ -1852,11 +1954,12 @@
       if (!!args.ON && Object.keys(d.widgets).length !== 1) return;
       w.fullscreen = !!args.ON;
       this._renderDashboardFromModel(d);
+      this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) });
       this._savePersisted();
     }
-    setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) this._savePersisted(); }
-    changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) this._savePersisted(); }
-    setVirtualStageSize(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.width = num(args.WIDTH, 480); cam.height = num(args.HEIGHT, 360); }); if (w) this._savePersisted(); }
+    setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) { const d = this._findDashOfWidget(w.id); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); } }
+    changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) { const d = this._findDashOfWidget(w.id); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); } }
+    setVirtualStageSize(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.width = num(args.WIDTH, 480); cam.height = num(args.HEIGHT, 360); }); if (w) { const d = this._findDashOfWidget(w.id); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); } }
     getVirtualStageInfo(args) { const cam = this._getVirtualStageCamera(args.STAGE_ID); const prop = String(args.PROP).toLowerCase(); if (prop === 'rotation') return cam.direction; if (prop === 'mouse x' || prop === 'mouse y') { const mouse = this._worldToVirtualStagePoint(args.STAGE_ID, this._readMouse('x'), this._readMouse('y')); return prop === 'mouse y' ? mouse.y : mouse.x; } return cam[prop] ?? ''; }
 
     // These reporter blocks accept one scalar value. Scalar camera conversions are
@@ -1865,11 +1968,11 @@
     // active it also warns instead of inventing a missing paired coordinate.
     localiseToStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, false); }
     normaliseFromStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, true); }
-    setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._savePersisted(); }
-    setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); if (w.card) w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
-    setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); if (w.label) w.label.textContent = w.title; this._savePersisted(); }
-    setWidgetSandbox(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.sandbox = String(args.MODE); if (w.type === 'iframe' && w.dom.iframe) { if (w.sandbox === 'safe') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin'); else if (w.sandbox === 'restricted') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin allow-forms'); else w.dom.iframe.removeAttribute('sandbox'); } }
-    removeWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); const w = d.widgets[id]; if (!w) return; if (w._cleanupResize) w._cleanupResize(); if (w.card?.parentNode) w.card.parentNode.removeChild(w.card); delete d.widgets[id]; d.pages.forEach(p => p.widgets = p.widgets.filter(x => x !== id)); d.bindings = d.bindings.filter(b => b.widgetId !== id); d.links = d.links.filter(l => l.from !== id && l.to !== id); this._savePersisted(); }
+    setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
+    setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); if (w.card) w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); }
+    setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); if (w.label) w.label.textContent = w.title; this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); this._savePersisted(); }
+    setWidgetSandbox(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.sandbox = String(args.MODE); if (w.type === 'iframe' && w.dom.iframe) { if (w.sandbox === 'safe') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin'); else if (w.sandbox === 'restricted') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin allow-forms'); else w.dom.iframe.removeAttribute('sandbox'); } this._postDashboardModel(d, 'widget.updated', { widget: this._serializeWidget(w) }); }
+    removeWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); const w = d.widgets[id]; if (!w) return; if (w._cleanupResize) w._cleanupResize(); if (w.card?.parentNode) w.card.parentNode.removeChild(w.card); delete d.widgets[id]; d.pages.forEach(p => p.widgets = p.widgets.filter(x => x !== id)); d.bindings = d.bindings.filter(b => b.widgetId !== id); d.links = d.links.filter(l => l.from !== id && l.to !== id); this._postDashboardModel(d, 'widget.removed', { widgetId: id }); this._savePersisted(); }
     bindWidgetToVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID), dir = String(args.DIR), name = String(args.VAR); d.bindings = d.bindings.filter(b => !(b.widgetId === id && b.varName === name)); d.bindings.push({ widgetId: id, varName: name, dir, sourceGuard: '' }); const w = d.widgets[id]; if (!w) return; if (dir === 'input' || dir === 'both') { const v = this._readScratchVar(name); if (v !== '') this._setWidgetValue(d, w, v, 'scratch'); } else { this._writeScratchVar(name, w.value); } this._savePersisted(); }
     linkWidgets(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.links = d.links.filter(l => !(l.from === String(args.FROM) && l.to === String(args.TO))); d.links.push({ from: String(args.FROM), to: String(args.TO) }); this._savePersisted(); }
     setDashboardVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._setDashboardVarInternal(d, String(args.NAME), args.VALUE, 'code'); this._savePersisted(); }
