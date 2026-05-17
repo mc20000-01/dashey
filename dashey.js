@@ -234,6 +234,8 @@
         .dp-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
         .dp-body { flex: 1; overflow: auto; padding: 12px; min-height: 0; }
         .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 48px; gap: 12px; align-content: start; min-height: 100%; min-width: 0; }
+        .dp-body { flex: 1; overflow: auto; padding: 12px; }
+        .dp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-content: start; min-height: 100%; }
         .dp-grid.dp-freeform { min-height: 100%; }
         .dp-card { background: var(--dp-surface); border: 1px solid var(--dp-border); border-radius: var(--dp-radius); padding: 12px; overflow: hidden; position: relative; min-height: 48px; box-sizing: border-box; box-shadow: 0 4px 12px rgba(0,0,0,0.18); transition: transform 0.15s, background 0.15s, border-color 0.15s, opacity 0.15s; }
         .dp-card:hover { background: var(--dp-surface-2); }
@@ -245,6 +247,10 @@
         .dp-card.dp-widget-fullscreen .dp-label { display: none; }
         .dp-card.dp-widget-fullscreen .dp-resize { display: none; }
         .dp-card.dp-widget-fullscreen > div:nth-child(2) { height: 100% !important; min-height: 0; }
+        .dp-card.dp-widget-fullscreen { grid-column: 1 / -1 !important; grid-row: 1 / -1 !important; width: 100% !important; height: 100% !important; min-height: calc(100% - 2px); }
+        .dp-card.dp-widget-fullscreen .dp-label { display: none; }
+        .dp-card.dp-widget-fullscreen .dp-resize { display: none; }
+        .dp-card.dp-widget-fullscreen > div:nth-child(2) { height: 100% !important; }
         .dp-label { font-size: 11px; color: rgba(255,255,255,0.68); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 700; }
         .dp-center { display: flex; align-items: center; justify-content: center; }
         .dp-text { font-size: 20px; font-weight: 700; word-break: break-word; }
@@ -1108,6 +1114,7 @@
       const w = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssW * devicePixelRatio)));
       const h = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor(cssH * devicePixelRatio)));
       if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+      const r = c.getBoundingClientRect(); const w = Math.max(2, Math.floor(r.width * devicePixelRatio)); const h = Math.max(2, Math.floor(r.height * devicePixelRatio)); if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.clearRect(0, 0, w, h);
       ctx.fillStyle = '#000'; ctx.fillRect(0, 0, w, h);
@@ -1183,6 +1190,7 @@
       }
       this._refreshWidgetVisibility(d);
     }
+    _renderDashboardFromModel(d) { if (!d?.grid) return; d.grid.innerHTML = ''; d.grid.classList.toggle('dp-freeform', d.layout.mode === 'freeform'); if (d.layout.mode === 'freeform') { d.grid.style.position = 'relative'; d.grid.style.display = 'block'; } else { d.grid.style.position = ''; d.grid.style.display = 'grid'; d.grid.style.gridTemplateColumns = `repeat(${clamp(num(d.layout.columns, 12), 1, 48)}, minmax(0, 1fr))`; d.grid.style.gap = `${num(d.layout.gap, 12)}px`; } for (const wid in d.widgets) { const w = d.widgets[wid]; if (w?.card) { d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } } this._refreshWidgetVisibility(d); }
     showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
     hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.container.style.display = 'none'; this._savePersisted(); }
     destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; if (d.cleanupDrag) d.cleanupDrag(); if (d.cleanupResize) d.cleanupResize(); for (const wid in d.widgets) { const w = d.widgets[wid]; if (w._cleanupResize) w._cleanupResize(); } if (d.host?.parentNode) d.host.parentNode.removeChild(d.host); delete this.dashboards[d.id]; this._savePersisted(); }
@@ -1223,6 +1231,7 @@
     setWidgetPosition(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w || (!canInteract(w, 'move', 'code') && !canInteract(w, 'resize', 'code'))) return; const before = clone(w.position); w.position = w.position || {}; if (canInteract(w, 'move', 'code')) { w.position.x = num(args.X, 0); w.position.y = num(args.Y, 0); } if (canInteract(w, 'resize', 'code')) { w.position.w = num(args.W, d.layout.mode === 'freeform' ? 180 : 3); w.position.h = num(args.H, d.layout.mode === 'freeform' ? 120 : 2); } w.position.mode = d.layout.mode === 'freeform' ? 'freeform' : 'grid'; this._applyWidgetPosition(d, w); this._record({ op: 'widget.move', dashId: d.id, widgetId: w.id, before, after: clone(w.position) }); this._emit('widget.dragged', d, { widgetId: w.id, value: w.value, position: clone(w.position), source: 'code' }); this._savePersisted(); }
     setWidgetInteraction(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.permissions = { move: normalizeInteractionMode(args.MOVE), resize: normalizeInteractionMode(args.RESIZE) }; this._applyWidgetPermissions(w); this._savePersisted(); }
     setWidgetFullscreen(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; if (!!args.ON && Object.keys(d.widgets).length !== 1) return; w.fullscreen = !!args.ON; this._renderDashboardFromModel(d); this._savePersisted(); }
+    setWidgetFullscreen(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; if (!!args.ON && Object.keys(d.widgets).length !== 1) return; w.fullscreen = !!args.ON; this._applyWidgetPosition(d, w); this._savePersisted(); }
     setVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x = num(args.X, 0); cam.y = num(args.Y, 0); cam.zoom = num(args.ZOOM, 100); cam.direction = num(args.DIRECTION, 90); }); if (w) this._savePersisted(); }
     changeVirtualStageCamera(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.x += num(args.DX, 0); cam.y += num(args.DY, 0); cam.zoom += num(args.DZOOM, 0); cam.direction += num(args.DDIRECTION, 0); }); if (w) this._savePersisted(); }
     setVirtualStageSize(args) { const w = this._setVirtualStageCameraState(args.STAGE_ID, cam => { cam.width = num(args.WIDTH, 480); cam.height = num(args.HEIGHT, 360); }); if (w) this._savePersisted(); }
