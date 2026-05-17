@@ -16,6 +16,7 @@
   const MAX_HISTORY = 100;
   const OFFSCREEN_LIMIT = 10000;
   const MAX_CANVAS_DIMENSION = 4096;
+  const STAGE_POPUP_FRAME_INTERVAL = 1000 / 24;
 
   const LOGO_SVG = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160.15225" height="160.15225" viewBox="0,0,160.15225,160.15225"><defs><linearGradient x1="249.4437" y1="157.32369" x2="258.8874" y2="157.32369" gradientUnits="userSpaceOnUse" id="color-1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ffde00"/></linearGradient></defs><g transform="translate(-159.92388,-99.92387)"><g stroke-miterlimit="10"><path d="M174.92388,257.57613c-6.90356,0 -12.5,-5.59644 -12.5,-12.5v-130.15225c0,-6.90356 5.59644,-12.5 12.5,-12.5h130.15225c6.90356,0 12.5,5.59644 12.5,12.5v130.15225c0,6.90356 -5.59644,12.5 -12.5,12.5z" fill="#ffffff" stroke="#000000" stroke-width="5" stroke-linecap="butt"/><path d="M163.07952,130.49673h152.31777" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round"/><path d="M292.245,109.19128l14.6225,14.62251" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M306.8675,109.19128l-14.6225,14.6225" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M245.63576,123.66147h14.01324" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M268.67879,124.27074c-0.27614,0 -0.5,-0.22386 -0.5,-0.5v-14.53641c0,-0.27614 0.22386,-0.5 0.5,-0.5h14.53641c0.27614,0 0.5,0.22386 0.5,0.5v14.53641c0,0.27614 -0.22386,0.5 -0.5,0.5z" fill="#f5f8fa" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M174.47687,169.81375c-2.76142,0 -5,-2.23858 -5,-5v-22.29137c0,-2.76142 2.23858,-5 5,-5h52.75492c2.76142,0 5,2.23858 5,5v22.29137c0,2.76142 -2.23858,5 -5,5z" fill="#ff0000" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M246.82781,169.20448c-2.76142,0 -5,-2.23858 -5,-5v-21.6821c0,-2.76142 2.23858,-5 5,-5h20.15892c2.76142,0 5,2.23858 5,5v21.6821c0,2.76142 -2.23858,5 -5,5z" fill="#1d00ff" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><g fill="none" stroke-width="3.75" stroke-linecap="round"><path d="M249.4437,157.32369h14.92714" stroke="#ffffff"/><path d="M249.4437,157.32369h9.4437" stroke="url(#color-1)"/></g><text transform="translate(250.35761,153.79052) scale(0.30623,0.30623)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">15</tspan></text><text transform="translate(171.58436,159.43682) scale(0.5,0.5)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">test :3</tspan></text></g></g></svg><!--rotationCenter:80.07612499999999:80.076125-->';
   const LOGO_URI = `data:image/svg+xml,${encodeURIComponent(LOGO_SVG)}`;
@@ -470,6 +471,7 @@
       try { if (dash.permissionPrompt?.parentNode) dash.permissionPrompt.parentNode.removeChild(dash.permissionPrompt); } catch {}
       dash.permissionPrompt = null;
       dash._popupMessageCleanup = null;
+      dash._popupStageTransport = null;
       dash.cleanupDrag = null;
       dash.cleanupResize = null;
       if (options.resetWidgets) this._resetWidgetDom(dash);
@@ -700,11 +702,108 @@
         const container = doc.createElement('div');
         container.className = 'dp-window';
         root.appendChild(container);
+        const drawUnavailable = canvas => {
+          const ctx = canvas?.getContext?.('2d');
+          if (!ctx) return;
+          const win = canvas.ownerDocument?.defaultView || popup;
+          const ratio = win.devicePixelRatio || 1;
+          const rect = canvas.getBoundingClientRect?.() || { width: 0, height: 0 };
+          const width = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor((rect.width || 2) * ratio)));
+          const height = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor((rect.height || 2) * ratio)));
+          if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, width, height);
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, width, height);
+          ctx.fillStyle = 'rgba(255,255,255,0.72)';
+          ctx.font = `${12 * ratio}px sans-serif`;
+          ctx.textAlign = 'center';
+          ctx.fillText('Stage unavailable', width / 2, height / 2);
+        };
+        const getStageCanvas = widgetId => {
+          const selector = typeof popup.CSS?.escape === 'function' ? `.dp-card[data-widget-id="${popup.CSS.escape(widgetId)}"] .dp-stage-canvas` : null;
+          if (selector) return root.querySelector(selector);
+          for (const card of root.querySelectorAll('.dp-card')) {
+            if (card.dataset.widgetId === widgetId) return card.querySelector('.dp-stage-canvas');
+          }
+          return null;
+        };
+        const drawStageFrame = (canvas, image, widget, frame) => {
+          const ctx = canvas?.getContext?.('2d');
+          if (!ctx || !image) return;
+          const win = canvas.ownerDocument?.defaultView || popup;
+          const ratio = win.devicePixelRatio || 1;
+          const rect = canvas.getBoundingClientRect?.() || { width: 0, height: 0 };
+          const width = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor((rect.width || 2) * ratio)));
+          const height = Math.max(2, Math.min(MAX_CANVAS_DIMENSION, Math.floor((rect.height || 2) * ratio)));
+          if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, width, height);
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, width, height);
+          if (widget.type !== 'stage.expand') {
+            const scale = Math.min(width / image.width, height / image.height);
+            const dw = image.width * scale, dh = image.height * scale;
+            try { ctx.drawImage(image, (width - dw) / 2, (height - dh) / 2, dw, dh); } catch {}
+            return;
+          }
+          const cam = widget.camera || {};
+          const camWidth = num(cam.width, frame.stageWidth || frame.width || 480);
+          const camHeight = num(cam.height, frame.stageHeight || frame.height || 360);
+          const stageW = num(frame.stageWidth, frame.width || 480);
+          const stageH = num(frame.stageHeight, frame.height || 360);
+          const scratchScale = Math.min(width / camWidth, height / camHeight) * (num(cam.zoom, 100) / 100);
+          const angle = (90 - num(cam.direction, 90)) * Math.PI / 180;
+          ctx.save();
+          ctx.translate(width / 2, height / 2);
+          ctx.scale(scratchScale, scratchScale);
+          ctx.rotate(angle);
+          ctx.translate(-num(cam.x, 0), -num(cam.y, 0));
+          try { ctx.drawImage(image, -stageW / 2, stageH / 2, stageW, -stageH); } catch {}
+          ctx.restore();
+        };
+        const renderStageFrame = async data => {
+          const frame = data.frame;
+          const widgets = Array.isArray(data.widgets) ? data.widgets : [];
+          if (!frame || !widgets.length) return;
+          const seq = num(data.sequence, 0);
+          if (seq && num(root.dataset.stageFrameSeq, 0) > seq) return;
+          root.dataset.stageFrameSeq = String(seq || Date.now());
+          let image = null;
+          try {
+            if (data.frameKind === 'imageBitmap') image = frame;
+            else if (data.frameKind === 'blob' && typeof popup.createImageBitmap === 'function') image = await popup.createImageBitmap(frame);
+            else if (data.frameKind === 'dataURL') {
+              image = await new Promise((resolve, reject) => {
+                const img = new popup.Image();
+                img.onload = () => resolve(img);
+                img.onerror = reject;
+                img.src = frame;
+              });
+            }
+            if (seq && num(root.dataset.stageFrameSeq, 0) > seq) return;
+            for (const widget of widgets) {
+              const canvas = getStageCanvas(String(widget.id || ''));
+              if (canvas) drawStageFrame(canvas, image, widget, data);
+            }
+          } catch {
+            widgets.forEach(widget => {
+              const canvas = getStageCanvas(String(widget.id || ''));
+              if (canvas) drawUnavailable(canvas);
+            });
+          } finally {
+            try { if (image && typeof image.close === 'function') image.close(); } catch {}
+          }
+        };
         const onMessage = event => {
           const data = event.data || {};
-          if (data.type !== 'dashey:model' || data.dashId !== dash.id) return;
-          root.dataset.modelUpdatedAt = String(Date.now());
-          if (data.dashboard?.title) doc.title = data.dashboard.title;
+          if (data.dashId !== dash.id) return;
+          if (data.type === 'dashey:model') {
+            root.dataset.modelUpdatedAt = String(Date.now());
+            if (data.dashboard?.title) doc.title = data.dashboard.title;
+          } else if (data.type === 'dashey:stage-frame') {
+            renderStageFrame(data);
+          }
         };
         popup.addEventListener('message', onMessage);
         popup.addEventListener('beforeunload', () => {
@@ -1501,6 +1600,102 @@
       return document.querySelector('canvas[class*="stage"]:not(.dp-stage-canvas)');
     }
 
+
+    _getNativeStageSize() {
+      const native = Scratch?.vm?.runtime?.renderer?._nativeSize || [Scratch?.vm?.runtime?.stageWidth || 480, Scratch?.vm?.runtime?.stageHeight || 360];
+      return { width: num(native[0], 480), height: num(native[1], 360) };
+    }
+
+    _getVisiblePopupStageWidgets(dash) {
+      if (!dash || this._getActiveHostType(dash) !== 'popup' || !this._isPopupOpen(dash)) return [];
+      return Object.values(dash.widgets || {}).filter(widget => {
+        if (!this._isStageWidget(widget) || !widget.dom?.canvas) return false;
+        if (dash.layout?.mode === 'pages') {
+          const activeWidgets = (dash.pages.find(page => page.id === dash.activePage)?.widgets) || [];
+          if (!activeWidgets.includes(widget.id)) return false;
+        }
+        return widget.card?.style?.display !== 'none';
+      });
+    }
+
+    _makePopupStageFramePayload(dash, widgets, frame, frameKind, frameWidth, frameHeight) {
+      const stageSize = this._getNativeStageSize();
+      dash._popupStageTransport = dash._popupStageTransport || { lastSent: 0, inFlight: false, sequence: 0 };
+      const transport = dash._popupStageTransport;
+      transport.sequence += 1;
+      return {
+        type: 'dashey:stage-frame',
+        dashId: dash.id,
+        sequence: transport.sequence,
+        frameKind,
+        frame,
+        width: frameWidth,
+        height: frameHeight,
+        stageWidth: stageSize.width,
+        stageHeight: stageSize.height,
+        widgets: widgets.map(widget => {
+          const stageId = this._getVirtualStageId(widget);
+          const camera = { ...this._normalizeStageCamera(widget.camera || widget.value), id: stageId };
+          widget.camera = camera;
+          return { id: widget.id, type: widget.type, stageId, camera };
+        })
+      };
+    }
+
+    _postPopupStageFrames(dash) {
+      const widgets = this._getVisiblePopupStageWidgets(dash);
+      if (!widgets.length) return;
+      const src = this._getStageFrameCanvas();
+      if (!src || !src.width || !src.height || !this._isPopupOpen(dash)) return;
+      dash._popupStageTransport = dash._popupStageTransport || { lastSent: 0, inFlight: false, sequence: 0 };
+      const transport = dash._popupStageTransport;
+      const now = (typeof performance !== 'undefined' && typeof performance.now === 'function') ? performance.now() : Date.now();
+      if (transport.inFlight || now - transport.lastSent < STAGE_POPUP_FRAME_INTERVAL) return;
+      transport.lastSent = now;
+      transport.inFlight = true;
+      const postFrame = (frame, frameKind, transfer = []) => {
+        try {
+          const payload = this._makePopupStageFramePayload(dash, widgets, frame, frameKind, src.width, src.height);
+          dash.popup.postMessage(payload, '*', transfer);
+        } catch {}
+      };
+      if (typeof createImageBitmap === 'function') {
+        createImageBitmap(src).then(bitmap => {
+          if (this._isPopupOpen(dash)) postFrame(bitmap, 'imageBitmap', [bitmap]);
+          else if (typeof bitmap.close === 'function') bitmap.close();
+        }).catch(() => this._postPopupStageFrameFallback(dash, widgets, src)).finally(() => { transport.inFlight = false; });
+        return;
+      }
+      this._postPopupStageFrameFallback(dash, widgets, src);
+      transport.inFlight = false;
+    }
+
+    _postPopupStageFrameFallback(dash, widgets, src) {
+      if (!this._isPopupOpen(dash)) return;
+      const finish = (frame, frameKind) => {
+        try {
+          const payload = this._makePopupStageFramePayload(dash, widgets, frame, frameKind, src.width, src.height);
+          dash.popup.postMessage(payload, '*');
+        } catch {}
+      };
+      if (typeof src.toBlob === 'function') {
+        try {
+          src.toBlob(blob => { if (blob) finish(blob, 'blob'); else this._postPopupStageFrameDataURL(dash, widgets, src); }, 'image/webp', 0.8);
+          return;
+        } catch {}
+      }
+      this._postPopupStageFrameDataURL(dash, widgets, src);
+    }
+
+    _postPopupStageFrameDataURL(dash, widgets, src) {
+      if (!this._isPopupOpen(dash)) return;
+      try {
+        const dataURL = src.toDataURL('image/webp', 0.75);
+        const payload = this._makePopupStageFramePayload(dash, widgets, dataURL, 'dataURL', src.width, src.height);
+        dash.popup.postMessage(payload, '*');
+      } catch {}
+    }
+
     _drawStage(widget) {
       const c = widget.dom.canvas, ctx = widget.dom.ctx; if (!c || !ctx) return;
       const src = this._getStageFrameCanvas();
@@ -1526,8 +1721,8 @@
       }
       const cam = this._normalizeStageCamera(widget.camera || widget.value);
       widget.camera = cam;
-      const native = Scratch?.vm?.runtime?.renderer?._nativeSize || [Scratch?.vm?.runtime?.stageWidth || 480, Scratch?.vm?.runtime?.stageHeight || 360];
-      const stageW = num(native[0], 480), stageH = num(native[1], 360);
+      const native = this._getNativeStageSize();
+      const stageW = native.width, stageH = native.height;
       const scratchScale = Math.min(w / cam.width, h / cam.height) * (cam.zoom / 100);
       const angle = (90 - cam.direction) * Math.PI / 180;
       ctx.save();
@@ -1547,14 +1742,20 @@
         const d = this.dashboards[id];
         if (d.popup && !this._isPopupOpen(d)) this._teardownDashboardHost(d, { resetWidgets: true });
         if (!d.container || d.container.style.display === 'none') continue;
+        const isPopup = this._getActiveHostType(d) === 'popup';
+        let hasPopupStage = false;
         for (const wid in d.widgets) {
           const w = d.widgets[wid];
-          if ((w.type === 'stage' || w.type === 'stage.expand') && w.dom.canvas) this._drawStage(w);
+          if ((w.type === 'stage' || w.type === 'stage.expand') && w.dom.canvas) {
+            if (isPopup) hasPopupStage = true;
+            else this._drawStage(w);
+          }
           if (w.type === 'clock' && w.dom.text) this._updateWidgetDom(w, w.value);
           if (w._needsChartRedraw && w.dom.canvas) { w._needsChartRedraw = false; this._drawChart(w); }
           if (w._needsTableRedraw && w.dom.tableWrap) { w._needsTableRedraw = false; this._drawTable(w); }
           if (w._needsMiniRedraw && w.dom.canvas) { w._needsMiniRedraw = false; this._drawMinimap(w); }
         }
+        if (hasPopupStage) this._postPopupStageFrames(d);
       }
       this._raf = requestAnimationFrame(this._stageLoop);
     }
