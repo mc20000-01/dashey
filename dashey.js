@@ -161,6 +161,7 @@
           { opcode: 'setDashboardColor', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] colors bg [BG] fg [FG] accent [ACC]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, BG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#14161a' }, FG: { type: Scratch.ArgumentType.COLOR, defaultValue: '#ffffff' }, ACC: { type: Scratch.ArgumentType.COLOR, defaultValue: '#00d2ff' } } },
           { opcode: 'setDashboardWindow', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] window x [X] y [Y] w [W] h [H]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, X: { type: Scratch.ArgumentType.NUMBER, defaultValue: 80 }, Y: { type: Scratch.ArgumentType.NUMBER, defaultValue: 80 }, W: { type: Scratch.ArgumentType.NUMBER, defaultValue: 700 }, H: { type: Scratch.ArgumentType.NUMBER, defaultValue: 480 } } },
           { opcode: 'setWindowMode', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] window mode [MODE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, MODE: { type: Scratch.ArgumentType.STRING, menu: 'WINDOW_MODE_MENU' } } },
+          { opcode: 'setDashboardHost', blockType: Scratch.BlockType.COMMAND, text: 'set dashboard [DASH_ID] host [MODE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, MODE: { type: Scratch.ArgumentType.STRING, menu: 'HOST_MODE_MENU' } } },
           '---',
           { opcode: 'addWidget', blockType: Scratch.BlockType.COMMAND, text: 'add [TYPE] widget [WIDGET_ID] to dashboard [DASH_ID] titled [TITLE] value [VALUE]', arguments: { TYPE: { type: Scratch.ArgumentType.STRING, menu: 'WIDGET_MENU' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, TITLE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Widget' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: '' } } },
           { opcode: 'updateWidget', blockType: Scratch.BlockType.COMMAND, text: 'set widget [WIDGET_ID] on dashboard [DASH_ID] value to [VALUE]', arguments: { DASH_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'main' }, WIDGET_ID: { type: Scratch.ArgumentType.STRING, defaultValue: 'w1' }, VALUE: { type: Scratch.ArgumentType.STRING, defaultValue: 'Hello' } } },
@@ -211,6 +212,7 @@
           LAYOUT_MENU: { acceptReporters: true, items: ['grid', 'freeform', 'dock', 'tabs', 'pages'] },
           THEME_MENU: { acceptReporters: true, items: ['dark', 'light', 'glass', 'high-contrast', 'custom'] },
           WINDOW_MODE_MENU: { acceptReporters: true, items: ['windowed', 'snapped-left', 'snapped-right', 'snapped-top', 'snapped-bottom', 'fullscreen', 'modal'] },
+          HOST_MODE_MENU: { acceptReporters: true, items: ['inline', 'popup'] },
           SHAPE_MENU: { acceptReporters: true, items: ['rounded', 'sharp', 'circle', 'pill'] },
           BIND_DIR_MENU: { acceptReporters: true, items: ['input', 'output', 'both'] },
           SANDBOX_MENU: { acceptReporters: true, items: ['safe', 'restricted', 'unsafe'] },
@@ -233,6 +235,9 @@
       style.textContent = `
         @keyframes dp-pop { from { opacity: 0; transform: scale(0.98) translateY(6px); } to { opacity: 1; transform: scale(1) translateY(0); } }
         .dp-host { all: initial; position: fixed; inset: 0; z-index: 500; pointer-events: none; }
+        .dp-popup-permission { position: fixed; right: 18px; bottom: 18px; z-index: 2147483647; display: flex; align-items: center; gap: 10px; max-width: 320px; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.18); background: rgba(20,22,26,0.94); color: #fff; font-family: Inter, Segoe UI, sans-serif; font-size: 13px; line-height: 1.35; box-shadow: 0 18px 42px rgba(0,0,0,0.35); pointer-events: auto; }
+        .dp-popup-permission button { appearance: none; border: 0; border-radius: 999px; background: #00d2ff; color: #061017; cursor: pointer; font: inherit; font-weight: 700; padding: 8px 12px; white-space: nowrap; }
+        .dp-popup-permission button:hover { filter: brightness(1.08); }
         .dp-window { position: fixed; display: none; flex-direction: column; overflow: hidden; border-radius: 12px; color: var(--dp-fg); font-family: var(--dp-font); box-shadow: var(--dp-shadow); background: var(--dp-bg); border: 1px solid var(--dp-border); backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px); pointer-events: auto; }
         .dp-header { user-select: none; -webkit-user-select: none; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 14px; background: rgba(0,0,0,0.28); border-bottom: 1px solid rgba(255,255,255,0.06); position: relative; min-height: 38px; }
         .dp-title { position: absolute; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 700; }
@@ -302,7 +307,7 @@
         pages: [{ id: 'page1', title: 'Page 1', widgets: [] }], activePage: 'page1',
         layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false },
         theme: clone(DEFAULT_THEME),
-        window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', hostType: 'inline', pinned: false, alwaysOnTop: false },
+        window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', hostMode: 'inline', hostType: 'inline', pinned: false, alwaysOnTop: false },
         security: { defaultMode: 'safe' },
         state: { minimized: false, maximized: false, prevWindow: null, debug: false, modal: false },
         host: null, shadow: null, popup: null, popupRoot: null, container: null, header: null, body: null, grid: null, dirty: false
@@ -335,8 +340,11 @@
     }
 
     _serializeDashboard(dash) {
+      const windowState = clone(dash.window);
+      windowState.hostMode = this._getHostType(dash);
+      windowState.hostType = windowState.hostMode;
       return {
-        id: dash.id, title: dash.title, window: clone(dash.window), layout: clone(dash.layout), theme: clone(dash.theme), variables: clone(dash.variables),
+        id: dash.id, title: dash.title, window: windowState, layout: clone(dash.layout), theme: clone(dash.theme), variables: clone(dash.variables),
         bindings: clone(dash.bindings), links: clone(dash.links), pages: clone(dash.pages), activePage: dash.activePage, security: clone(dash.security),
         widgets: Object.values(dash.widgets).map(w => this._serializeWidget(w))
       };
@@ -347,6 +355,8 @@
     _deserializeDashboard(obj) {
       const dash = this._makeDashboard(obj.id, obj.title || obj.id);
       dash.window = Object.assign(dash.window, obj.window || {});
+      dash.window.hostMode = this._normalizeHostMode(dash.window.hostMode || dash.window.hostType);
+      dash.window.hostType = dash.window.hostMode;
       dash.layout = Object.assign(dash.layout, obj.layout || {});
       dash.theme = obj.theme || clone(DEFAULT_THEME);
       dash.variables = obj.variables || Object.create(null);
@@ -393,14 +403,25 @@
       this.globalZ = Math.max(this.globalZ + 1, Number(dash.window?.zIndex || 0) + 1);
       dash.window.zIndex = this.globalZ;
       if (dash.host?.style) dash.host.style.zIndex = String(dash.window.zIndex);
-      if (dash.container?.style && this._getHostType(dash) === 'popup') dash.container.style.zIndex = String(dash.window.zIndex);
+      if (dash.container?.style && this._getActiveHostType(dash) === 'popup') dash.container.style.zIndex = String(dash.window.zIndex);
       if (this._isPopupOpen(dash)) {
         try { dash.popup.focus(); } catch {}
       }
     }
 
+    _normalizeHostMode(mode) {
+      return String(mode || '').toLowerCase() === 'popup' ? 'popup' : 'inline';
+    }
+
     _getHostType(dash) {
-      return dash?.window?.hostType === 'popup' ? 'popup' : 'inline';
+      return this._normalizeHostMode(dash?.window?.hostMode || dash?.window?.hostType);
+    }
+
+    _getActiveHostType(dash) {
+      if (dash?._activeHostType) return dash._activeHostType;
+      if (dash?.popupRoot) return 'popup';
+      if (dash?.host) return 'inline';
+      return null;
     }
 
     _isPopupOpen(dash) {
@@ -446,6 +467,8 @@
       try { if (dash.cleanupDrag) dash.cleanupDrag(); } catch {}
       try { if (dash.cleanupResize) dash.cleanupResize(); } catch {}
       try { if (dash._popupMessageCleanup) dash._popupMessageCleanup(); } catch {}
+      try { if (dash.permissionPrompt?.parentNode) dash.permissionPrompt.parentNode.removeChild(dash.permissionPrompt); } catch {}
+      dash.permissionPrompt = null;
       dash._popupMessageCleanup = null;
       dash.cleanupDrag = null;
       dash.cleanupResize = null;
@@ -488,7 +511,7 @@
     _syncWindowStyles(dash) {
       if (!dash?.container) return;
       const mode = dash.window.mode || 'windowed';
-      const isPopup = this._getHostType(dash) === 'popup';
+      const isPopup = this._getActiveHostType(dash) === 'popup';
       if (dash.host?.style) dash.host.style.zIndex = String(dash.window.zIndex || this.globalZ);
       if (isPopup) dash.container.style.zIndex = String(dash.window.zIndex || this.globalZ);
       dash.container.style.borderRadius = mode === 'windowed' || mode === 'modal' ? '12px' : '0px';
@@ -592,16 +615,18 @@
 
     _createHostAndWindow(dash) {
       const targetType = this._getHostType(dash);
-      const currentType = dash._activeHostType || (dash.host ? 'inline' : (dash.popupRoot ? 'popup' : null));
+      const currentType = this._getActiveHostType(dash);
       if (dash.container && currentType === targetType && (targetType !== 'popup' || this._isPopupOpen(dash))) return;
       if (dash.container || currentType) this._teardownDashboardHost(dash, { resetWidgets: true, closePopup: currentType === 'popup' && targetType !== 'popup' });
       if (targetType === 'popup' && this._createPopupHostAndWindow(dash)) return;
       dash.window.hostType = 'inline';
       this._createInlineHostAndWindow(dash);
+      if (targetType === 'popup') this._showPopupPermissionPrompt(dash);
     }
 
     _createInlineHostAndWindow(dash) {
       dash._activeHostType = 'inline';
+      dash.window.hostType = 'inline';
       dash.host = document.createElement('div');
       dash.host.className = 'dp-host';
       dash.host.id = `dp-host-${dash.id}`;
@@ -615,6 +640,46 @@
       root.className = 'dp-window';
       dash.container = root; dash.shadow.appendChild(root);
       this._finishHostAndWindow(dash);
+    }
+
+
+    _showPopupPermissionPrompt(dash) {
+      if (!dash?.shadow) return;
+      if (dash.permissionPrompt?.parentNode) dash.permissionPrompt.parentNode.removeChild(dash.permissionPrompt);
+      const prompt = document.createElement('div');
+      prompt.className = 'dp-popup-permission';
+      const message = document.createElement('span');
+      message.textContent = 'Dashey needs a click to open this dashboard in a popup window.';
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = 'Open Dashey window';
+      button.addEventListener('click', () => this._openDashboardPopupFromPrompt(dash));
+      prompt.append(message, button);
+      dash.permissionPrompt = prompt;
+      dash.shadow.appendChild(prompt);
+    }
+
+    _openDashboardPopupFromPrompt(dash) {
+      if (!dash) return;
+      if (dash.permissionPrompt?.parentNode) dash.permissionPrompt.parentNode.removeChild(dash.permissionPrompt);
+      dash.permissionPrompt = null;
+      const wasMinimized = !!dash.state.minimized;
+      this._teardownDashboardHost(dash, { resetWidgets: true, closePopup: true });
+      dash.window.hostMode = 'popup';
+      if (!this._createPopupHostAndWindow(dash)) {
+        this._createInlineHostAndWindow(dash);
+        this._showPopupPermissionPrompt(dash);
+      }
+      for (const wid in dash.widgets) {
+        const w = dash.widgets[wid];
+        if (!w.card) this._createWidgetDom(dash, w, w.title, w.value);
+      }
+      this._renderDashboardFromModel(dash);
+      this._syncWindowStyles(dash);
+      if (dash.container) dash.container.style.display = wasMinimized ? 'none' : 'flex';
+      this._bringToFront(dash);
+      this._postDashboardModel(dash);
+      this._savePersisted();
     }
 
     _createPopupHostAndWindow(dash) {
@@ -662,6 +727,7 @@
         dash.shadow = null;
         dash._popupMessageCleanup = () => popup.removeEventListener('message', onMessage);
         dash._activeHostType = 'popup';
+        dash.window.hostType = 'popup';
         this._finishHostAndWindow(dash);
         return true;
       } catch (e) {
@@ -1522,7 +1588,7 @@
       this._refreshWidgetVisibility(d);
     }
     showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); if (!d.container) return; d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
-    hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.minimized = true; if (this._getHostType(d) === 'popup') this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); else if (d.container) d.container.style.display = 'none'; this._savePersisted(); }
+    hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.minimized = true; if (this._getActiveHostType(d) === 'popup') this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); else if (d.container) d.container.style.display = 'none'; this._savePersisted(); }
     destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); delete this.dashboards[d.id]; this._savePersisted(); }
     setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; if (this._isPopupOpen(d)) { try { d.popup.document.title = d.title; } catch {} this._postDashboardModel(d); } this._savePersisted(); }
     setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) this._renderDashboardFromModel(d); this._markDirty(d); this._savePersisted(); }
@@ -1545,6 +1611,20 @@
       this._hydrateDashboardDom(d);
       if (!d.container) return;
       d.container.style.display = mode === 'minimized' ? 'none' : 'flex';
+      this._bringToFront(d);
+      this._syncWindowStyles(d);
+      this._markDirty(d);
+      this._savePersisted();
+    }
+
+    setDashboardHost(args) {
+      const d = this._getDash(args.DASH_ID);
+      if (!d) return;
+      const mode = this._normalizeHostMode(args.MODE);
+      d.window.hostMode = mode;
+      d.window.hostType = mode;
+      this._hydrateDashboardDom(d);
+      if (d.container) d.container.style.display = d.state.minimized ? 'none' : 'flex';
       this._bringToFront(d);
       this._syncWindowStyles(d);
       this._markDirty(d);
