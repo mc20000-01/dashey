@@ -14,7 +14,6 @@
   const STORAGE_KEY = 'dashey:bundle';
   const LEGACY_STORAGE_KEYS = ['dashey:pro:bundle', 'dashey:v2:bundle'];
   const MAX_HISTORY = 100;
-  const OFFSCREEN_LIMIT = 10000;
 
   const LOGO_SVG = '<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="160.15225" height="160.15225" viewBox="0,0,160.15225,160.15225"><defs><linearGradient x1="249.4437" y1="157.32369" x2="258.8874" y2="157.32369" gradientUnits="userSpaceOnUse" id="color-1"><stop offset="0" stop-color="#ff0000"/><stop offset="1" stop-color="#ffde00"/></linearGradient></defs><g transform="translate(-159.92388,-99.92387)"><g stroke-miterlimit="10"><path d="M174.92388,257.57613c-6.90356,0 -12.5,-5.59644 -12.5,-12.5v-130.15225c0,-6.90356 5.59644,-12.5 12.5,-12.5h130.15225c6.90356,0 12.5,5.59644 12.5,12.5v130.15225c0,6.90356 -5.59644,12.5 -12.5,12.5z" fill="#ffffff" stroke="#000000" stroke-width="5" stroke-linecap="butt"/><path d="M163.07952,130.49673h152.31777" fill="none" stroke="#000000" stroke-width="5" stroke-linecap="round"/><path d="M292.245,109.19128l14.6225,14.62251" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M306.8675,109.19128l-14.6225,14.6225" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M245.63576,123.66147h14.01324" fill="none" stroke="#000000" stroke-width="3.75" stroke-linecap="round"/><path d="M268.67879,124.27074c-0.27614,0 -0.5,-0.22386 -0.5,-0.5v-14.53641c0,-0.27614 0.22386,-0.5 0.5,-0.5h14.53641c0.27614,0 0.5,0.22386 0.5,0.5v14.53641c0,0.27614 -0.22386,0.5 -0.5,0.5z" fill="#f5f8fa" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M174.47687,169.81375c-2.76142,0 -5,-2.23858 -5,-5v-22.29137c0,-2.76142 2.23858,-5 5,-5h52.75492c2.76142,0 5,2.23858 5,5v22.29137c0,2.76142 -2.23858,5 -5,5z" fill="#ff0000" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><path d="M246.82781,169.20448c-2.76142,0 -5,-2.23858 -5,-5v-21.6821c0,-2.76142 2.23858,-5 5,-5h20.15892c2.76142,0 5,2.23858 5,5v21.6821c0,2.76142 -2.23858,5 -5,5z" fill="#1d00ff" stroke="#000000" stroke-width="3.75" stroke-linecap="butt"/><g fill="none" stroke-width="3.75" stroke-linecap="round"><path d="M249.4437,157.32369h14.92714" stroke="#ffffff"/><path d="M249.4437,157.32369h9.4437" stroke="url(#color-1)"/></g><text transform="translate(250.35761,153.79052) scale(0.30623,0.30623)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">15</tspan></text><text transform="translate(171.58436,159.43682) scale(0.5,0.5)" font-size="40" xml:space="preserve" fill="#fc00ff" stroke="none" stroke-width="1" stroke-linecap="butt" font-family="Sans Serif" font-weight="normal" text-anchor="start"><tspan x="0" dy="0">test :3</tspan></text></g></g></svg><!--rotationCenter:80.07612499999999:80.076125-->';
   const LOGO_URI = `data:image/svg+xml,${encodeURIComponent(LOGO_SVG)}`;
@@ -305,21 +304,6 @@
       dash.host.style.zIndex = String(dash.window.zIndex);
     }
 
-    _getLooseWindowBounds(width = 700, height = 480) {
-      const screenWidth = num(window.screen?.availWidth || window.screen?.width, window.innerWidth || 1280);
-      const screenHeight = num(window.screen?.availHeight || window.screen?.height, window.innerHeight || 720);
-      const spanX = Math.min(OFFSCREEN_LIMIT, Math.max(screenWidth * 2, window.innerWidth * 3, width * 2));
-      const spanY = Math.min(OFFSCREEN_LIMIT, Math.max(screenHeight * 2, window.innerHeight * 3, height * 2));
-      return {
-        minX: -spanX,
-        maxX: spanX,
-        minY: -spanY,
-        maxY: spanY,
-        maxWidth: Math.max(260, Math.min(OFFSCREEN_LIMIT, screenWidth * 2, window.innerWidth * 3 || screenWidth * 2)),
-        maxHeight: Math.max(180, Math.min(OFFSCREEN_LIMIT, screenHeight * 2, window.innerHeight * 3 || screenHeight * 2))
-      };
-    }
-
     _syncWindowStyles(dash) {
       if (!dash?.container) return;
       const mode = dash.window.mode || 'windowed';
@@ -336,13 +320,12 @@
       } else if (mode === 'snapped-bottom') {
         Object.assign(dash.container.style, { left: '0px', top: '50vh', width: '100vw', height: '50vh' });
       } else {
-        const bounds = this._getLooseWindowBounds(dash.window.width, dash.window.height);
-        const width = clamp(num(dash.window.width, 700), 260, bounds.maxWidth);
-        const height = clamp(num(dash.window.height, 480), 180, bounds.maxHeight);
+        const width = clamp(num(dash.window.width, 700), 260, Math.max(260, window.innerWidth));
+        const height = clamp(num(dash.window.height, 480), 180, Math.max(180, window.innerHeight));
         dash.window.width = width;
         dash.window.height = height;
-        dash.window.x = clamp(num(dash.window.x, 80), bounds.minX, bounds.maxX);
-        dash.window.y = clamp(num(dash.window.y, 80), bounds.minY, bounds.maxY);
+        dash.window.x = clamp(num(dash.window.x, 80), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(num(dash.window.y, 80), 0, Math.max(0, window.innerHeight - 40));
         Object.assign(dash.container.style, {
           left: `${dash.window.x}px`, top: `${dash.window.y}px`, width: `${width}px`, height: `${height}px`
         });
@@ -429,9 +412,8 @@
         if (!state.dragging || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
         const width = num(dash.window.width, dash.container.getBoundingClientRect().width);
         const height = num(dash.window.height, dash.container.getBoundingClientRect().height);
-        const bounds = this._getLooseWindowBounds(width, height);
-        dash.window.x = clamp(state.x + (e.clientX - state.sx), bounds.minX, bounds.maxX);
-        dash.window.y = clamp(state.y + (e.clientY - state.sy), bounds.minY, bounds.maxY);
+        dash.window.x = clamp(state.x + (e.clientX - state.sx), -width + 80, Math.max(0, window.innerWidth - 40));
+        dash.window.y = clamp(state.y + (e.clientY - state.sy), 0, Math.max(0, window.innerHeight - 40));
         dash.container.style.left = `${dash.window.x}px`;
         dash.container.style.top = `${dash.window.y}px`;
         this._emit('dashboard.moved', dash, { x: dash.window.x, y: dash.window.y });
@@ -480,9 +462,8 @@
       };
       const move = e => {
         if (!state.resizing || (state.pointerId !== null && e.pointerId !== state.pointerId)) return;
-        const bounds = this._getLooseWindowBounds(state.w, state.h);
-        const w = clamp(state.w + (e.clientX - state.sx), 260, bounds.maxWidth);
-        const ht = clamp(state.h + (e.clientY - state.sy), 180, bounds.maxHeight);
+        const w = clamp(state.w + (e.clientX - state.sx), 260, window.innerWidth);
+        const ht = clamp(state.h + (e.clientY - state.sy), 180, window.innerHeight);
         dash.window.width = w;
         dash.window.height = ht;
         dash.container.style.width = `${w}px`;
