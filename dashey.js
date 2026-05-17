@@ -302,10 +302,10 @@
         pages: [{ id: 'page1', title: 'Page 1', widgets: [] }], activePage: 'page1',
         layout: { mode: 'grid', columns: 12, rowHeight: 48, gap: 12, snap: true, freeform: false },
         theme: clone(DEFAULT_THEME),
-        window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', pinned: false, alwaysOnTop: false },
+        window: { x: 80, y: 80, width: 700, height: 480, zIndex: this.globalZ++, mode: 'windowed', hostType: 'inline', pinned: false, alwaysOnTop: false },
         security: { defaultMode: 'safe' },
         state: { minimized: false, maximized: false, prevWindow: null, debug: false, modal: false },
-        host: null, shadow: null, container: null, header: null, body: null, grid: null, dirty: false
+        host: null, shadow: null, popup: null, popupRoot: null, container: null, header: null, body: null, grid: null, dirty: false
       };
     }
 
@@ -389,10 +389,84 @@
 
 
     _bringToFront(dash) {
-      if (!dash?.host) return;
+      if (!dash) return;
       this.globalZ = Math.max(this.globalZ + 1, Number(dash.window?.zIndex || 0) + 1);
       dash.window.zIndex = this.globalZ;
-      dash.host.style.zIndex = String(dash.window.zIndex);
+      if (dash.host?.style) dash.host.style.zIndex = String(dash.window.zIndex);
+      if (dash.container?.style && this._getHostType(dash) === 'popup') dash.container.style.zIndex = String(dash.window.zIndex);
+      if (this._isPopupOpen(dash)) {
+        try { dash.popup.focus(); } catch {}
+      }
+    }
+
+    _getHostType(dash) {
+      return dash?.window?.hostType === 'popup' ? 'popup' : 'inline';
+    }
+
+    _isPopupOpen(dash) {
+      try { return !!dash?.popup && !dash.popup.closed; } catch { return false; }
+    }
+
+    _getHostWindow(dash) {
+      return dash?.container?.ownerDocument?.defaultView || window;
+    }
+
+    _escapeHtml(text) {
+      return String(text ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    }
+
+    _styleForPopup() {
+      return this._styleText || document.getElementById('dashey-style')?.textContent || '';
+    }
+
+    _closeDashboardPopup(dash) {
+      if (!dash?.popup) return;
+      try { if (!dash.popup.closed) dash.popup.close(); } catch {}
+      dash.popup = null;
+      dash.popupRoot = null;
+    }
+
+    _resetWidgetDom(dash) {
+      if (!dash?.widgets) return;
+      for (const wid in dash.widgets) {
+        const w = dash.widgets[wid];
+        try { if (w._cleanupResize) w._cleanupResize(); } catch {}
+        w._cleanupResize = null;
+        w.card = null;
+        w.content = null;
+        w.label = null;
+        w.resizeHandle = null;
+        w.dom = {};
+        w.inputEl = null;
+      }
+    }
+
+    _teardownDashboardHost(dash, options = {}) {
+      if (!dash) return;
+      try { if (dash.cleanupDrag) dash.cleanupDrag(); } catch {}
+      try { if (dash.cleanupResize) dash.cleanupResize(); } catch {}
+      try { if (dash._popupMessageCleanup) dash._popupMessageCleanup(); } catch {}
+      dash._popupMessageCleanup = null;
+      dash.cleanupDrag = null;
+      dash.cleanupResize = null;
+      if (options.resetWidgets) this._resetWidgetDom(dash);
+      if (dash.host?.parentNode) dash.host.parentNode.removeChild(dash.host);
+      dash.host = null;
+      dash.shadow = null;
+      dash.popupRoot = null;
+      dash.container = null;
+      dash.header = null;
+      dash.body = null;
+      dash.grid = null;
+      if (options.closePopup) this._closeDashboardPopup(dash);
+      dash._activeHostType = null;
+    }
+
+    _postDashboardModel(dash) {
+      if (!this._isPopupOpen(dash)) return;
+      try {
+        dash.popup.postMessage({ type: 'dashey:model', dashId: dash.id, dashboard: this._serializeDashboard(dash) }, '*');
+      } catch {}
     }
 
 
@@ -414,8 +488,14 @@
     _syncWindowStyles(dash) {
       if (!dash?.container) return;
       const mode = dash.window.mode || 'windowed';
-      dash.host.style.zIndex = String(dash.window.zIndex || this.globalZ);
+      const isPopup = this._getHostType(dash) === 'popup';
+      if (dash.host?.style) dash.host.style.zIndex = String(dash.window.zIndex || this.globalZ);
+      if (isPopup) dash.container.style.zIndex = String(dash.window.zIndex || this.globalZ);
       dash.container.style.borderRadius = mode === 'windowed' || mode === 'modal' ? '12px' : '0px';
+      if (isPopup) {
+        Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '100vh' });
+        return;
+      }
       if (mode === 'fullscreen') {
         Object.assign(dash.container.style, { left: '0px', top: '0px', width: '100vw', height: '100vh' });
       } else if (mode === 'snapped-left') {
@@ -488,6 +568,11 @@
     }
 
     _hydrateDashboardDom(dash) {
+      if (!dash) return;
+      if (dash.popup && !this._isPopupOpen(dash)) {
+        this._teardownDashboardHost(dash, { resetWidgets: true });
+        dash.popup = null;
+      }
       this._createHostAndWindow(dash);
       for (const wid in dash.widgets) {
         const w = dash.widgets[wid];
@@ -495,6 +580,7 @@
       }
       this._renderDashboardFromModel(dash);
       this._syncWindowStyles(dash);
+      this._postDashboardModel(dash);
     }
 
     _record(change) {
@@ -505,7 +591,17 @@
     }
 
     _createHostAndWindow(dash) {
-      if (dash.host) return;
+      const targetType = this._getHostType(dash);
+      const currentType = dash._activeHostType || (dash.host ? 'inline' : (dash.popupRoot ? 'popup' : null));
+      if (dash.container && currentType === targetType && (targetType !== 'popup' || this._isPopupOpen(dash))) return;
+      if (dash.container || currentType) this._teardownDashboardHost(dash, { resetWidgets: true, closePopup: currentType === 'popup' && targetType !== 'popup' });
+      if (targetType === 'popup' && this._createPopupHostAndWindow(dash)) return;
+      dash.window.hostType = 'inline';
+      this._createInlineHostAndWindow(dash);
+    }
+
+    _createInlineHostAndWindow(dash) {
+      dash._activeHostType = 'inline';
       dash.host = document.createElement('div');
       dash.host.className = 'dp-host';
       dash.host.id = `dp-host-${dash.id}`;
@@ -513,11 +609,71 @@
       document.body.appendChild(dash.host);
       dash.shadow = dash.host.attachShadow({ mode: 'open' });
       const shim = document.createElement('style');
-      shim.textContent = `:host{all:initial;position:fixed;inset:0;pointer-events:none}${this._styleText || document.getElementById('dashey-style')?.textContent || ''}`;
+      shim.textContent = `:host{all:initial;position:fixed;inset:0;pointer-events:none}${this._styleForPopup()}`;
       dash.shadow.appendChild(shim);
       const root = document.createElement('div');
       root.className = 'dp-window';
       dash.container = root; dash.shadow.appendChild(root);
+      this._finishHostAndWindow(dash);
+    }
+
+    _createPopupHostAndWindow(dash) {
+      let popup = null;
+      try { popup = window.open('', 'dashey-' + dash.id, 'popup,width=700,height=480'); } catch {}
+      if (!popup || popup.closed) {
+        console.warn('[Dashey] Popup blocked; falling back to inline dashboard host.');
+        this._closeDashboardPopup(dash);
+        return false;
+      }
+      try {
+        const doc = popup.document;
+        doc.open();
+        doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${this._escapeHtml(dash.title || dash.id)}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--dp-bg,#14161a)}${this._styleForPopup().replace(/<\/style/gi, '<\\/style')}</style></head><body><div id="dashey-popup-root"></div></body></html>`);
+        doc.close();
+        const root = doc.getElementById('dashey-popup-root');
+        if (!root) throw new Error('Popup root was not created.');
+        const container = doc.createElement('div');
+        container.className = 'dp-window';
+        root.appendChild(container);
+        const onMessage = event => {
+          const data = event.data || {};
+          if (data.type !== 'dashey:model' || data.dashId !== dash.id) return;
+          root.dataset.modelUpdatedAt = String(Date.now());
+          if (data.dashboard?.title) doc.title = data.dashboard.title;
+        };
+        popup.addEventListener('message', onMessage);
+        popup.addEventListener('beforeunload', () => {
+          if (dash.popup === popup) {
+            dash.popup = null;
+            dash.popupRoot = null;
+            dash.container = null;
+            dash.header = null;
+            dash.body = null;
+            dash.grid = null;
+            dash._activeHostType = null;
+            dash.state.minimized = true;
+            this._resetWidgetDom(dash);
+          }
+        });
+        dash.popup = popup;
+        dash.popupRoot = root;
+        dash.container = container;
+        dash.host = root;
+        dash.shadow = null;
+        dash._popupMessageCleanup = () => popup.removeEventListener('message', onMessage);
+        dash._activeHostType = 'popup';
+        this._finishHostAndWindow(dash);
+        return true;
+      } catch (e) {
+        console.warn('[Dashey] Popup host failed; falling back to inline dashboard host.', e);
+        try { popup.close(); } catch {}
+        dash.popup = null;
+        dash.popupRoot = null;
+        return false;
+      }
+    }
+
+    _finishHostAndWindow(dash) {
       this._applyTheme(dash);
       this._buildChrome(dash);
       this._buildBody(dash);
@@ -548,6 +704,7 @@
     }
 
     _installDragging(dash) {
+      const hostWindow = this._getHostWindow(dash);
       const state = { dragging: false, pointerId: null, sx: 0, sy: 0, x: 0, y: 0 };
       const isControl = e => e.composedPath().some(el => el?.classList?.contains('dp-no-drag') || ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'A'].includes(el?.tagName));
       const down = e => {
@@ -590,20 +747,22 @@
       dash.header.addEventListener('pointermove', move);
       dash.header.addEventListener('pointerup', up);
       dash.header.addEventListener('pointercancel', up);
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+      hostWindow.addEventListener('pointermove', move);
+      hostWindow.addEventListener('pointerup', up);
       dash.cleanupDrag = () => {
         dash.header.removeEventListener('pointerdown', down);
         dash.header.removeEventListener('pointermove', move);
         dash.header.removeEventListener('pointerup', up);
         dash.header.removeEventListener('pointercancel', up);
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
+        hostWindow.removeEventListener('pointermove', move);
+        hostWindow.removeEventListener('pointerup', up);
       };
     }
 
     _installResizing(dash) {
-      const h = document.createElement('div'); h.className = 'dp-resize dp-no-drag'; dash.container.appendChild(h);
+      const hostWindow = this._getHostWindow(dash);
+      const doc = dash.container?.ownerDocument || document;
+      const h = doc.createElement('div'); h.className = 'dp-resize dp-no-drag'; dash.container.appendChild(h);
       const state = { resizing: false, pointerId: null, sx: 0, sy: 0, w: 0, h: 0 };
       const down = e => {
         if (dash.window.mode !== 'windowed' && dash.window.mode !== 'modal') return;
@@ -640,15 +799,15 @@
       h.addEventListener('pointermove', move);
       h.addEventListener('pointerup', up);
       h.addEventListener('pointercancel', up);
-      window.addEventListener('pointermove', move);
-      window.addEventListener('pointerup', up);
+      hostWindow.addEventListener('pointermove', move);
+      hostWindow.addEventListener('pointerup', up);
       dash.cleanupResize = () => {
         h.removeEventListener('pointerdown', down);
         h.removeEventListener('pointermove', move);
         h.removeEventListener('pointerup', up);
         h.removeEventListener('pointercancel', up);
-        window.removeEventListener('pointermove', move);
-        window.removeEventListener('pointerup', up);
+        hostWindow.removeEventListener('pointermove', move);
+        hostWindow.removeEventListener('pointerup', up);
       };
     }
 
@@ -662,6 +821,7 @@
     }
 
     _wireWidget(dash, widget) {
+      const hostWindow = this._getHostWindow(dash);
       this._applyWidgetPermissions(widget);
       widget.card.addEventListener('mouseenter', () => this._emit('widget.hovered', dash, { widgetId: widget.id, value: widget.value }));
       widget.card.addEventListener('click', () => this._emit('widget.clicked', dash, { widgetId: widget.id, value: widget.value }));
@@ -707,8 +867,8 @@
       widget.label.addEventListener('pointermove', moveWidget);
       widget.label.addEventListener('pointerup', endMove);
       widget.label.addEventListener('pointercancel', endMove);
-      window.addEventListener('pointermove', moveWidget);
-      window.addEventListener('pointerup', endMove);
+      hostWindow.addEventListener('pointermove', moveWidget);
+      hostWindow.addEventListener('pointerup', endMove);
 
       if (widget.resizeHandle) {
         const s = { d: false, pointerId: null, sx: 0, sy: 0, w: 0, h: 0, before: null };
@@ -763,21 +923,21 @@
         widget.resizeHandle.addEventListener('pointermove', resizeWidget);
         widget.resizeHandle.addEventListener('pointerup', endResize);
         widget.resizeHandle.addEventListener('pointercancel', endResize);
-        window.addEventListener('pointermove', resizeWidget);
-        window.addEventListener('pointerup', endResize);
+        hostWindow.addEventListener('pointermove', resizeWidget);
+        hostWindow.addEventListener('pointerup', endResize);
         widget._cleanupResize = () => {
           widget.label.removeEventListener('pointerdown', startMove);
           widget.label.removeEventListener('pointermove', moveWidget);
           widget.label.removeEventListener('pointerup', endMove);
           widget.label.removeEventListener('pointercancel', endMove);
-          window.removeEventListener('pointermove', moveWidget);
-          window.removeEventListener('pointerup', endMove);
+          hostWindow.removeEventListener('pointermove', moveWidget);
+          hostWindow.removeEventListener('pointerup', endMove);
           widget.resizeHandle.removeEventListener('pointerdown', startResize);
           widget.resizeHandle.removeEventListener('pointermove', resizeWidget);
           widget.resizeHandle.removeEventListener('pointerup', endResize);
           widget.resizeHandle.removeEventListener('pointercancel', endResize);
-          window.removeEventListener('pointermove', resizeWidget);
-          window.removeEventListener('pointerup', endResize);
+          hostWindow.removeEventListener('pointermove', resizeWidget);
+          hostWindow.removeEventListener('pointerup', endResize);
         };
       }
     }
@@ -992,9 +1152,9 @@
       return false;
     }
 
-    _markDirty(dash) { if (!dash) return; dash.dirty = true; if (!this.renderQueued) { this.renderQueued = true; requestAnimationFrame(() => { this.renderQueued = false; this._flushRender(); }); } }
+    _markDirty(dash) { if (!dash) return; dash.dirty = true; this._postDashboardModel(dash); if (!this.renderQueued) { this.renderQueued = true; requestAnimationFrame(() => { this.renderQueued = false; this._flushRender(); }); } }
     _flushRender() { for (const id in this.dashboards) { const d = this.dashboards[id]; if (!d.dirty) continue; d.dirty = false; this._refreshWidgetVisibility(d); } }
-    _refreshWidgetVisibility(dash) { const active = new Set((dash.pages.find(p => p.id === dash.activePage)?.widgets) || []); for (const id in dash.widgets) { const w = dash.widgets[id]; const visible = !dash.state.minimized && dash.container.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id)); w.card.style.display = visible ? '' : 'none'; } }
+    _refreshWidgetVisibility(dash) { const active = new Set((dash.pages.find(p => p.id === dash.activePage)?.widgets) || []); for (const id in dash.widgets) { const w = dash.widgets[id]; if (!w?.card) continue; const visible = !dash.state.minimized && dash.container?.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id)); w.card.style.display = visible ? '' : 'none'; } }
 
     _emit(type, dash, payload = {}) {
       const ev = { type, dashId: dash?.id || '', timestamp: Date.now(), ...clone(payload) };
@@ -1319,6 +1479,7 @@
       this._ensureStageFrameCacheHook();
       for (const id in this.dashboards) {
         const d = this.dashboards[id];
+        if (d.popup && !this._isPopupOpen(d)) this._teardownDashboardHost(d, { resetWidgets: true });
         if (!d.container || d.container.style.display === 'none') continue;
         for (const wid in d.widgets) {
           const w = d.widgets[wid];
@@ -1360,10 +1521,10 @@
       }
       this._refreshWidgetVisibility(d);
     }
-    showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
-    hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.container.style.display = 'none'; this._savePersisted(); }
-    destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; if (d.cleanupDrag) d.cleanupDrag(); if (d.cleanupResize) d.cleanupResize(); for (const wid in d.widgets) { const w = d.widgets[wid]; if (w._cleanupResize) w._cleanupResize(); } if (d.host?.parentNode) d.host.parentNode.removeChild(d.host); delete this.dashboards[d.id]; this._savePersisted(); }
-    setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; this._savePersisted(); }
+    showDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._hydrateDashboardDom(d); if (!d.container) return; d.state.minimized = false; d.container.style.display = 'flex'; d.container.style.animation = 'dp-pop .2s ease-out'; this._bringToFront(d); this._syncWindowStyles(d); this._markDirty(d); this._savePersisted(); }
+    hideDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.minimized = true; if (this._getHostType(d) === 'popup') this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); else if (d.container) d.container.style.display = 'none'; this._savePersisted(); }
+    destroyDashboard(args) { const d = this._getDash(args.DASH_ID); if (!d) return; this._teardownDashboardHost(d, { resetWidgets: true, closePopup: true }); delete this.dashboards[d.id]; this._savePersisted(); }
+    setDashboardTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.title = String(args.TITLE); if (d.header) d.header.querySelector('.dp-title').textContent = d.title; if (this._isPopupOpen(d)) { try { d.popup.document.title = d.title; } catch {} this._postDashboardModel(d); } this._savePersisted(); }
     setDashboardLayout(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.layout.mode = String(args.MODE); d.layout.columns = clamp(num(args.COLS, 12), 1, 48); d.layout.rowHeight = clamp(num(args.ROW, 48), 16, 200); d.layout.snap = !!args.SNAP; if (d.grid) this._renderDashboardFromModel(d); this._markDirty(d); this._savePersisted(); }
     setDashboardTheme(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const name = String(args.THEME); if (name !== 'custom') d.theme = clone(this.themes[name] || this.themes.dark); else d.theme = d.theme || clone(DEFAULT_THEME); this._applyTheme(d); this._savePersisted(); }
     setDashboardColor(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.theme.vars['--dp-bg'] = String(args.BG); d.theme.vars['--dp-fg'] = String(args.FG); d.theme.vars['--dp-accent'] = String(args.ACC); this._applyTheme(d); this._savePersisted(); }
@@ -1381,6 +1542,8 @@
       }
       d.state.modal = mode === 'modal';
       d.state.minimized = mode === 'minimized';
+      this._hydrateDashboardDom(d);
+      if (!d.container) return;
       d.container.style.display = mode === 'minimized' ? 'none' : 'flex';
       this._bringToFront(d);
       this._syncWindowStyles(d);
@@ -1393,7 +1556,7 @@
       const t = String(args.TYPE), title = String(args.TITLE || id), raw = this._sanitizeValue(t, args.VALUE);
       const w = { id, type: t, title, value: raw, state: {}, style: {}, sandbox: d.security.defaultMode || 'safe', position: { x: 0, y: 0, w: d.layout.mode === 'freeform' ? 180 : 3, h: d.layout.mode === 'freeform' ? 120 : 2, mode: d.layout.mode === 'freeform' ? 'freeform' : 'grid' }, permissions: { move: 'both', resize: 'both' }, camera: this._normalizeStageCamera(raw), fullscreen: false, dom: {}, card: null, content: null, resizeHandle: null };
       if (this._isStageWidget(w)) this._applyVirtualStageId(w, raw);
-      d.widgets[id] = w; this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
+      d.widgets[id] = w; if (d.grid) { this._createWidgetDom(d, w, title, raw); d.grid.appendChild(w.card); this._applyWidgetPosition(d, w); } d.pages[0].widgets.push(id); this._savePersisted(); this._markDirty(d);
     }
     _sanitizeValue(type, value) { if (['table.grid', 'chart.line', 'chart.bar', 'chart.multi', 'viewer.minimap', 'metric.number', 'badge', 'gauge.meter', 'color.swatch', 'list.items', 'timeline', 'clock', 'stage', 'stage.expand'].includes(type)) { const p = jparse(String(value), null); if (p !== null) return p; } return value; }
     updateWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const before = clone(w.value); const after = this._sanitizeValue(w.type, args.VALUE); this._setWidgetValue(d, w, after, 'code'); this._record({ op: 'widget.value', dashId: d.id, widgetId: w.id, before, after: clone(after) }); this._savePersisted(); }
@@ -1422,8 +1585,8 @@
     localiseToStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, false); }
     normaliseFromStage(args) { return this._localStageScalar(args.STAGE_ID, args.VALUE, args.PROP, true); }
     setWidgetStyle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.style[String(args.KEY)] = String(args.VALUE); this._applyWidgetStyle(w); this._savePersisted(); }
-    setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
-    setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); w.label.textContent = w.title; this._savePersisted(); }
+    setWidgetShape(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const s = String(args.SHAPE); if (w.card) w.card.style.borderRadius = s === 'sharp' ? '0px' : s === 'circle' ? '50%' : s === 'pill' ? '9999px' : '12px'; }
+    setWidgetTitle(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.title = String(args.TITLE); if (w.label) w.label.textContent = w.title; this._savePersisted(); }
     setWidgetSandbox(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; w.sandbox = String(args.MODE); if (w.type === 'iframe' && w.dom.iframe) { if (w.sandbox === 'safe') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin'); else if (w.sandbox === 'restricted') w.dom.iframe.setAttribute('sandbox', 'allow-same-origin allow-forms'); else w.dom.iframe.removeAttribute('sandbox'); } }
     removeWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID); const w = d.widgets[id]; if (!w) return; if (w._cleanupResize) w._cleanupResize(); if (w.card?.parentNode) w.card.parentNode.removeChild(w.card); delete d.widgets[id]; d.pages.forEach(p => p.widgets = p.widgets.filter(x => x !== id)); d.bindings = d.bindings.filter(b => b.widgetId !== id); d.links = d.links.filter(l => l.from !== id && l.to !== id); this._savePersisted(); }
     bindWidgetToVar(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const id = String(args.WIDGET_ID), dir = String(args.DIR), name = String(args.VAR); d.bindings = d.bindings.filter(b => !(b.widgetId === id && b.varName === name)); d.bindings.push({ widgetId: id, varName: name, dir, sourceGuard: '' }); const w = d.widgets[id]; if (!w) return; if (dir === 'input' || dir === 'both') { const v = this._readScratchVar(name); if (v !== '') this._setWidgetValue(d, w, v, 'scratch'); } else { this._writeScratchVar(name, w.value); } this._savePersisted(); }
@@ -1438,7 +1601,7 @@
     importDashboard(args) { const parsed = jparse(String(args.JSON), null); if (!parsed) return; const obj = parsed.dashboard || parsed; const id = String(args.DASH_ID || obj.id || 'main'); if (this.dashboards[id]) this.destroyDashboard({ DASH_ID: id }); const d = this._deserializeDashboard({ ...obj, id }); this.dashboards[id] = d; this._hydrateDashboardDom(d); this.showDashboard({ DASH_ID: id }); this._savePersisted(); }
     undo() { const c = this.undoStack.pop(); if (!c) return; this.redoStack.push(c); if (c.op === 'widget.value') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this._setWidgetValue(d, w, c.before, 'undo'); } else if (c.op === 'widget.move') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: c.before.x, Y: c.before.y, W: c.before.w, H: c.before.h }); } else if (c.op === 'dashboard.theme') { const d = this._getDash(c.dashId); if (d) { d.theme = c.before; this._applyTheme(d); } } this._savePersisted(); }
     redo() { const c = this.redoStack.pop(); if (!c) return; this.undoStack.push(c); if (c.op === 'widget.value') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this._setWidgetValue(d, w, c.after, 'redo'); } else if (c.op === 'widget.move') { const d = this._getDash(c.dashId); const w = d?.widgets?.[c.widgetId]; if (d && w) this.setWidgetPosition({ DASH_ID: d.id, WIDGET_ID: w.id, X: c.after.x, Y: c.after.y, W: c.after.w, H: c.after.h }); } else if (c.op === 'dashboard.theme') { const d = this._getDash(c.dashId); if (d) { d.theme = c.after; this._applyTheme(d); } } this._savePersisted(); }
-    setDebugMode(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.debug = !!args.ON; for (const wid in d.widgets) { const w = d.widgets[wid]; w.card.classList.toggle('dp-debug', d.state.debug); } }
+    setDebugMode(args) { const d = this._getDash(args.DASH_ID); if (!d) return; d.state.debug = !!args.ON; for (const wid in d.widgets) { const w = d.widgets[wid]; if (w.card) w.card.classList.toggle('dp-debug', d.state.debug); } }
     inspectWidget(args) { const d = this._getDash(args.DASH_ID); if (!d) return; const w = d.widgets[String(args.WIDGET_ID)]; if (!w) return; const msg = [`id: ${w.id}`, `type: ${w.type}`, `title: ${w.title}`, `value: ${typeof w.value === 'object' ? JSON.stringify(w.value) : String(w.value)}`, `pos: ${JSON.stringify(w.position)}`, `sandbox: ${w.sandbox}`, `style: ${JSON.stringify(w.style)}`].join('\n'); alert(msg); }
 
     whenWidgetClicked(args) { return false; }
@@ -1454,7 +1617,8 @@
       const active = new Set((dash.pages.find(p => p.id === dash.activePage)?.widgets) || []);
       for (const id in dash.widgets) {
         const w = dash.widgets[id];
-        const visible = !dash.state.minimized && dash.container.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id));
+        if (!w?.card) continue;
+        const visible = !dash.state.minimized && dash.container?.style.display !== 'none' && (dash.layout.mode !== 'pages' || active.has(id));
         w.card.style.display = visible ? '' : 'none';
       }
     }
